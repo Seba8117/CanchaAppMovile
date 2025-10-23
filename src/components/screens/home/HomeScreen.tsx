@@ -173,7 +173,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
       <div className="mt-8">
         <h2 className="text-white mb-4">Accesos Rápidos</h2>
         <div className="grid grid-cols-2 gap-4">
-          <Button
+           <Button
             variant="outline"
             className="h-16 flex-col gap-2 border-[#00a884] text-[#00a884] hover:bg-[#00a884] hover:text-white"
             onClick={() => onNavigate('create')}
@@ -189,18 +189,21 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16l2.879-2.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Torneos
-          </Button>
-        </div>
-        
-        <div className="grid grid-cols-1 gap-4 mt-4">
+             Torneos
+           </Button>
           <Button
             variant="outline"
-            className="h-16 flex-col gap-2 border-[#172c44] text-[#172c44] hover:bg-[#172c44] hover:text-white"
+            className="h-16 flex-col gap-2 border-purple-700 text-purple-700 hover:bg-purple-700 hover:text-white"
             onClick={() => onNavigate('my-teams')}
           >
             <Users size={20} />
             Mis Equipos
+          </Button>
+          <Button variant="outline" 
+          className="h-16 flex-col gap-2 border-[#93c5fd] text-[#93c5fd] hover:bg-[#93c5fd] hover:text-white" 
+          onClick={() => onNavigate('my-bookings')}>
+            <Calendar size={20} />
+            Mis Reservas
           </Button>
         </div>
       </div>

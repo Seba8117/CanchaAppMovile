@@ -36,6 +36,8 @@
   --chart-3: #172c44;
   --chart-4: #e5e5e5;
   --chart-5: #666666;
+  --chart-6: #400094;
+  --chart-7: #005ce6;
   --radius: 0.625rem;
   --sidebar: #ffffff;
   --sidebar-foreground: #172c44;
@@ -45,6 +47,7 @@
   --sidebar-accent-foreground: #172c44;
   --sidebar-border: rgba(23, 44, 68, 0.1);
   --sidebar-ring: #f4b400;
+  --color-button-blue: #2563eb;
 }
 
 .dark {
@@ -88,6 +91,7 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #374151;
   --sidebar-ring: #f4b400;
+  
 }
 
 @theme inline {

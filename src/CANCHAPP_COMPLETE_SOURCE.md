@@ -84,6 +84,9 @@ import { MatchPlayersScreen } from './components/MatchPlayersScreen';
 import { ReportPlayerScreen } from './components/ReportPlayerScreen';
 import { ReportTeamScreen } from './components/ReportTeamScreen';
 import { Navigation } from './components/Navigation';
+import { MyBookingsScreen } from './components/screens/booking/MyBookingsScreen';
+import { SearchCourtsScreen } from './components/screens/matches/SearchCourtsScreen';
+import { CreateBookingScreen } from './components/screens/matches/CreateBookingScreen';
 import { OwnerNavigation } from './components/OwnerNavigation';
 
 export default function App() {
@@ -157,6 +160,12 @@ export default function App() {
           return <ProfileScreen onNavigate={handleNavigate} onLogout={handleLogout} />;
         case 'edit-profile':
           return <EditProfileScreen onBack={handleBack} />;
+        case 'my-bookings':
+          return <MyBookingsScreen onBack={handleBack} />;
+        case 'search-courts':
+          return <SearchCourtsScreen onBack={handleBack} onNavigate={handleNavigate} />;
+        case 'create-booking':
+          return <CreateBookingScreen onBack={handleBack} onNavigate={handleNavigate} courtId={screenData.courtId} />;
         default:
           return <HomeScreen onNavigate={handleNavigate} />;
       }
@@ -192,7 +201,7 @@ export default function App() {
       : <HomeScreen onNavigate={handleNavigate} />;
   };
 
-  const showNavigation = !['match-detail', 'create', 'chat', 'notifications', 'tournaments', 'tournament-detail', 'edit-profile', 'edit-owner-profile', 'add-court', 'create-tournament', 'tournament-management', 'team-details', 'match-players', 'report-player', 'report-team'].includes(currentScreen);
+  const showNavigation = !['match-detail', 'create', 'chat', 'notifications', 'tournaments', 'tournament-detail', 'edit-profile', 'edit-owner-profile', 'add-court', 'create-tournament', 'tournament-management', 'team-details', 'match-players', 'report-player', 'report-team', 'my-bookings', 'search-courts', 'create-booking'].includes(currentScreen);
 
   return (
     <div className="max-w-sm mx-auto bg-white min-h-screen relative">

@@ -31,6 +31,7 @@ import { CreateTeamScreen } from "./components/screens/teams/CreateTeamScreen";
 import { MyTeamsScreen } from "./components/screens/teams/MyTeamsScreen";
 import { DeleteTeamScreen } from "./components/screens/teams/DeleteTeamScreen";
 import { Navigation } from "./components/navigation/Navigation";
+import { MyBookingsScreen } from "./components/screens/booking/MyBookingsScreen";
 import { OwnerNavigation } from "./components/navigation/OwnerNavigation";
 
 export default function App() {
@@ -220,6 +221,8 @@ export default function App() {
           );
         case "edit-profile":
           return <EditProfileScreen onBack={handleBack} />;
+        case "my-bookings":
+          return <MyBookingsScreen onBack={handleBack} />;
         default:
           return <HomeScreen onNavigate={handleNavigate} />;
       }
@@ -304,6 +307,7 @@ export default function App() {
     "report-team",
     "create-team",
     "delete-team",
+    "my-bookings",
   ].includes(currentScreen);
 
   return (
