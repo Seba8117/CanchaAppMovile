@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Upload, Users, Shield } from 'lucide-react';
+import { createTeam, getTeamById } from '../../../services/teamService';
+import { auth } from '../../../Firebase/firebaseConfig';
 
 interface CreateTeamScreenProps {
   onBack: () => void;
@@ -18,6 +20,8 @@ export function CreateTeamScreen({ onBack, onNavigate }: CreateTeamScreenProps) 
   });
 
   const [step, setStep] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const sports = ['Fútbol', 'Básquet', 'Tenis', 'Vóley', 'Pádel'];
 
@@ -46,39 +50,44 @@ export function CreateTeamScreen({ onBack, onNavigate }: CreateTeamScreenProps) 
     }
   };
 
-  const handleCreateTeam = () => {
-    // Here would be the API call to create the team
-    console.log('Creating team:', teamData);
-    
-    // Simulate team creation
-    const newTeam = {
-      id: Date.now(),
-      name: teamData.name,
-      description: teamData.description,
-      sport: teamData.sport,
-      maxPlayers: parseInt(teamData.maxPlayers),
-      currentPlayers: 1, // Creator is the first member
-      isPrivate: teamData.isPrivate,
-      requiresApproval: teamData.requiresApproval,
-      type: 'official',
-      createdAt: new Date(),
-      captain: {
-        id: 1,
-        name: 'Mi Usuario',
-        image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
-      },
-      members: [
-        {
-          id: 1,
-          name: 'Mi Usuario',
-          image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-          role: 'captain'
-        }
-      ]
-    };
+  const handleCreateTeam = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Verificar que el usuario esté autenticado
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('Debes estar autenticado para crear un equipo');
+      }
+      
+      // Datos del equipo para Firebase
+      const teamDataForFirebase = {
+        name: teamData.name,
+        description: teamData.description,
+        sport: teamData.sport,
+        maxPlayers: parseInt(teamData.maxPlayers),
+        isPrivate: teamData.isPrivate,
+        requiresApproval: teamData.requiresApproval,
+        captainId: currentUser.uid, // Usar el UID del usuario autenticado
+        captainName: currentUser.email || 'Usuario', // Usar el email como nombre temporal
+        status: 'active' as const,
+      };
 
-    // Navigate to team details with success message
-    onNavigate('team-details', newTeam);
+      // Crear el equipo en Firebase
+      const teamId = await createTeam(teamDataForFirebase);
+      
+      console.log('Equipo creado exitosamente con ID:', teamId);
+      
+      // Navegar directamente a "Mis Equipos" para ver el equipo en la lista
+      onNavigate('my-teams');
+      
+    } catch (error) {
+      console.error('Error al crear el equipo:', error);
+      setError(error instanceof Error ? error.message : 'Error desconocido al crear el equipo');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const renderStepIndicator = () => (

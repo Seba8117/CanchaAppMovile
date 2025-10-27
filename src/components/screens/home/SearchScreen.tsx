@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Filter, MapPin, Calendar, Users, Star } from 'lucide-react';
 import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
@@ -6,6 +6,8 @@ import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { AppHeader } from '../../common/AppHeader';
+import { getAvailableMatches } from '../../../services/matchService';
+import { getPublicTeams, searchTeams } from '../../../services/teamService';
 
 interface SearchScreenProps {
   onNavigate: (screen: string, data?: any) => void;
@@ -14,107 +16,60 @@ interface SearchScreenProps {
 
 export function SearchScreen({ onNavigate, onBack }: SearchScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('matches');
+  const [activeTab, setActiveTab] = useState('teams');
+  const [matches, setMatches] = useState<any[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [courts, setCourts] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const matches = [
-    {
-      id: 1,
-      sport: 'Fútbol',
-      location: 'Cancha Los Pinos',
-      distance: '1.2 km',
-      time: '19:00',
-      date: 'Hoy',
-      playersNeeded: 3,
-      totalPlayers: 10,
-      price: '$5.000',
-      captain: 'Juan Pérez',
-      rating: 4.8
-    },
-    {
-      id: 2,
-      sport: 'Básquetball',
-      location: 'Polideportivo Central',
-      distance: '2.5 km',
-      time: '20:30',
-      date: 'Mañana',
-      playersNeeded: 2,
-      totalPlayers: 8,
-      price: '$3.500',
-      captain: 'María González',
-      rating: 4.9
-    }
-  ];
+  // Cargar datos reales de Firebase
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const teams = [
-    {
-      id: 1,
-      name: 'Los Tigres FC',
-      members: 15,
-      sport: 'Fútbol',
-      level: 'Intermedio',
-      wins: 12,
-      losses: 3,
-      rating: 4.7,
-      looking: 'Buscan jugadores'
-    },
-    {
-      id: 2,
-      name: 'Basquet Pro',
-      members: 8,
-      sport: 'Básquetball',
-      level: 'Avanzado',
-      wins: 18,
-      losses: 2,
-      rating: 4.9,
-      looking: 'Equipo completo'
+  const loadData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [matchesData, teamsData] = await Promise.all([
+        getAvailableMatches(),
+        getPublicTeams()
+      ]);
+      setMatches(matchesData);
+      setTeams(teamsData);
+    } catch (err) {
+      console.error('Error loading data:', err);
+      setError('Error al cargar los datos');
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
 
-  const players = [
-    {
-      id: 1,
-      name: 'Carlos Mendoza',
-      position: 'Delantero',
-      sport: 'Fútbol',
-      level: 'Avanzado',
-      matches: 45,
-      rating: 4.8,
-      available: true
-    },
-    {
-      id: 2,
-      name: 'Ana Gutierrez',
-      position: 'Base',
-      sport: 'Básquetball',
-      level: 'Intermedio',
-      matches: 23,
-      rating: 4.6,
-      available: true
+  // Buscar equipos cuando cambie el query
+  useEffect(() => {
+    if (searchQuery.trim() && activeTab === 'teams') {
+      searchTeamsData();
+    } else if (!searchQuery.trim()) {
+      loadData();
     }
-  ];
+  }, [searchQuery, activeTab]);
 
-  const courts = [
-    {
-      id: 1,
-      name: 'Cancha Los Pinos',
-      location: 'Providencia',
-      distance: '1.2 km',
-      sports: ['Fútbol', 'Futsal'],
-      price: '$25.000/hora',
-      rating: 4.8,
-      amenities: ['Estacionamiento', 'Vestuarios', 'Duchas']
-    },
-    {
-      id: 2,
-      name: 'Polideportivo Central',
-      location: 'Santiago Centro',
-      distance: '2.1 km',
-      sports: ['Básquetball', 'Volleyball'],
-      price: '$18.000/hora',
-      rating: 4.5,
-      amenities: ['Cafetería', 'Vestuarios']
+  const searchTeamsData = async () => {
+    setIsLoading(true);
+    try {
+      const searchResults = await searchTeams(searchQuery);
+      setTeams(searchResults);
+    } catch (err) {
+      console.error('Error searching teams:', err);
+      setError('Error al buscar equipos');
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
+
+  // Los datos ahora se cargan desde Firebase
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884] pb-20">
@@ -217,48 +172,83 @@ export function SearchScreen({ onNavigate, onBack }: SearchScreenProps) {
               <span className="text-sm text-white/90">{teams.length} resultados</span>
             </div>
             
-            {teams.map((team) => (
-              <Card key={team.id} className="cursor-pointer hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="text-[#172c44] mb-1">{team.name}</h3>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className="bg-[#f4b400] text-[#172c44]">
-                          {team.sport}
-                        </Badge>
-                        <span className="text-sm text-gray-600">{team.level}</span>
+            {isLoading ? (
+              <div className="text-center py-8">
+                <div className="text-white">Cargando equipos...</div>
+              </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <div className="text-red-300">{error}</div>
+                <Button 
+                  onClick={loadData} 
+                  className="mt-2 bg-[#00a884] hover:bg-[#00a884]/90"
+                >
+                  Reintentar
+                </Button>
+              </div>
+            ) : teams.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-white/70">No se encontraron equipos</div>
+              </div>
+            ) : (
+              teams.map((team) => (
+                <Card 
+                  key={team.id} 
+                  className="cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => onNavigate('team-detail', team)}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h3 className="text-[#172c44] mb-1">{team.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="bg-[#f4b400] text-[#172c44]">
+                            {team.sport}
+                          </Badge>
+                          <span className="text-sm text-gray-600">{team.level || 'Intermedio'}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Star className="text-[#f4b400]" size={14} fill="currentColor" />
+                        <span className="text-sm text-gray-600">{team.rating || '4.5'}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Star className="text-[#f4b400]" size={14} fill="currentColor" />
-                      <span className="text-sm text-gray-600">{team.rating}</span>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                    <div className="flex items-center gap-1">
-                      <Users size={14} />
-                      <span>{team.members} miembros</span>
+                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
+                      <div className="flex items-center gap-1">
+                        <Users size={14} />
+                        <span>{team.currentPlayers || team.members || 0} miembros</span>
+                      </div>
+                      <span>Máx: {team.maxPlayers || 10}</span>
                     </div>
-                    <span>W: {team.wins} L: {team.losses}</span>
-                  </div>
 
-                  <div className="flex justify-between items-center">
-                    <span className={`text-sm ${team.looking === 'Buscan jugadores' ? 'text-[#00a884]' : 'text-gray-500'}`}>
-                      {team.looking}
-                    </span>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="text-[#00a884] border-[#00a884]"
-                    >
-                      Ver Equipo
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm ${
+                        (team.currentPlayers || 0) < (team.maxPlayers || 10) 
+                          ? 'text-[#00a884]' 
+                          : 'text-gray-500'
+                      }`}>
+                        {(team.currentPlayers || 0) < (team.maxPlayers || 10) 
+                          ? 'Buscan jugadores' 
+                          : 'Equipo completo'
+                        }
+                      </span>
+                      <Button 
+                        size="sm" 
+                        className="bg-[#00a884] hover:bg-[#00a884]/90"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigate('join-team', team);
+                        }}
+                        disabled={(team.currentPlayers || 0) >= (team.maxPlayers || 10)}
+                      >
+                        {(team.currentPlayers || 0) < (team.maxPlayers || 10) ? 'Unirse' : 'Lleno'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </TabsContent>
 
           {/* Jugadores Tab */}

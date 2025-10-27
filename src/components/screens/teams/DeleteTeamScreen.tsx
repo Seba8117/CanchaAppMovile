@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, AlertTriangle, Users, Check, X, Clock, Mail, Bell } from 'lucide-react';
 import { notificationService } from '../../common/NotificationHelper';
+import { deleteTeam } from '../../../services/teamService';
 
 interface TeamMember {
-  id: number;
+  id: string; // Cambiado de number a string para compatibilidad con Firebase
   name: string;
   image?: string;
   role: 'captain' | 'member';
@@ -13,14 +14,14 @@ interface TeamMember {
 
 interface DeleteTeamScreenProps {
   teamData: {
-    id: number;
+    id: string; // Cambiado de number a string para compatibilidad con Firebase
     name: string;
     members: TeamMember[];
     captain: TeamMember;
   };
   onBack: () => void;
   onTeamDeleted: () => void;
-  currentUserId: number;
+  currentUserId: string; // Cambiado de number a string para compatibilidad
 }
 
 export function DeleteTeamScreen({ teamData, onBack, onTeamDeleted, currentUserId }: DeleteTeamScreenProps) {
@@ -88,6 +89,24 @@ export function DeleteTeamScreen({ teamData, onBack, onTeamDeleted, currentUserI
     notificationService.showEmailSent(teamData.name, totalMembers - 1); // Exclude captain
   };
 
+  const handleImmediateDelete = async () => {
+    try {
+      // Captain can delete immediately without voting
+      notificationService.showTeamDeletionInitiated(teamData.name);
+      
+      // Call Firebase service to delete the team
+      await deleteTeam(teamData.id);
+      
+      setTimeout(() => {
+        onTeamDeleted();
+      }, 1000);
+    } catch (error) {
+      console.error('Error al eliminar el equipo:', error);
+      // You could show an error notification here
+      alert('Error al eliminar el equipo. Inténtalo de nuevo.');
+    }
+  };
+
   const handleVote = (vote: 'approve' | 'reject') => {
     const updatedMembers = members.map(member =>
       member.id === currentUserId
@@ -136,7 +155,11 @@ export function DeleteTeamScreen({ teamData, onBack, onTeamDeleted, currentUserI
           <li>• Esta acción no se puede deshacer</li>
           <li>• Se perderán todos los datos del equipo</li>
           <li>• Se cancelarán partidos y torneos pendientes</li>
-          <li>• Se requiere aprobación de la mayoría del equipo</li>
+          {isCaptain ? (
+            <li>• Como capitán, puedes eliminar el equipo inmediatamente o iniciar votación</li>
+          ) : (
+            <li>• Se requiere aprobación de la mayoría del equipo</li>
+          )}
         </ul>
       </div>
 
@@ -153,12 +176,29 @@ export function DeleteTeamScreen({ teamData, onBack, onTeamDeleted, currentUserI
       </div>
 
       <div className="space-y-3">
-        <button
-          onClick={handleInitiateVoting}
-          className="w-full py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-        >
-          Iniciar Votación de Eliminación
-        </button>
+        {isCaptain ? (
+          <>
+            <button
+              onClick={handleImmediateDelete}
+              className="w-full py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Eliminar Equipo Inmediatamente (Capitán)
+            </button>
+            <button
+              onClick={handleInitiateVoting}
+              className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+            >
+              Iniciar Votación de Eliminación
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={handleInitiateVoting}
+            className="w-full py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Iniciar Votación de Eliminación
+          </button>
+        )}
         <button
           onClick={onBack}
           className="w-full py-3 bg-[#e5e5e5] text-[#172c44] rounded-lg hover:bg-[#d0d0d0] transition-colors"

@@ -66,21 +66,22 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   ];
 
   useEffect(() => {
-    if (step === 2) {
-      const fetchCourts = async () => {
+    const loadCourts = async () => {
+      try {
         setLoading(true);
-        try {
-          const fetchedCourts = await getAllCourts();
-          setCourts(fetchedCourts);
-        } catch (err: any) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchCourts();
-    }
-  }, [step]);
+        setError(null);
+        const courtsData = await getAllCourts();
+        setCourts(courtsData);
+      } catch (err) {
+        setError('Error al cargar las canchas disponibles');
+        console.error('Error loading courts:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCourts();
+  }, []);
 
   // Efecto para calcular el precio por jugador automáticamente
   useEffect(() => {
@@ -393,6 +394,9 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       description: description,
       captainId: currentUser.uid,
       captainName: currentUser.displayName || "Capitán Anónimo",
+      status: 'open',
+      players: [currentUser.uid],
+      currentPlayers: 1
     };
 
     // Añadir información del equipo si está incluido
@@ -402,11 +406,11 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     }
 
     try {
-      await createMatch(matchData);
+      const matchId = await createMatch(matchData);
       alert("¡Partido creado exitosamente!");
       onBack(); // Vuelve a la pantalla de inicio
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Error al crear el partido');
     } finally {
       setLoading(false);
     }

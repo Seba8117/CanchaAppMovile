@@ -1,7 +1,9 @@
-import { MapPin, Calendar, Users, Clock, Star, Plus } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MapPin, Calendar, Users, Clock, Star, Plus, Loader2, AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
+import { getPersonalizedRecommendations, MatchRecommendation } from '../../../services/matchmakingService';
 import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
 
 interface HomeScreenProps {
@@ -9,47 +11,60 @@ interface HomeScreenProps {
 }
 
 export function HomeScreen({ onNavigate }: HomeScreenProps) {
-  const nearbyMatches = [
-    {
-      id: 1,
-      sport: 'Fútbol',
-      location: 'Cancha Los Pinos',
-      distance: '1.2 km',
-      time: '19:00',
-      date: 'Hoy',
-      playersNeeded: 3,
-      totalPlayers: 10,
-      price: '$5.000',
-      captain: 'Juan Pérez',
-      rating: 4.8
-    },
-    {
-      id: 2,
-      sport: 'Básquetball',
-      location: 'Polideportivo Central',
-      distance: '2.5 km',
-      time: '20:30',
-      date: 'Mañana',
-      playersNeeded: 2,
-      totalPlayers: 8,
-      price: '$3.500',
-      captain: 'María González',
-      rating: 4.9
-    },
-    {
-      id: 3,
-      sport: 'Tenis',
-      location: 'Club Deportivo',
-      distance: '800 m',
-      time: '18:00',
-      date: 'Miércoles',
-      playersNeeded: 1,
-      totalPlayers: 4,
-      price: '$8.000',
-      captain: 'Carlos Silva',
-      rating: 4.7
+  const [recommendations, setRecommendations] = useState<MatchRecommendation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadRecommendations();
+  }, []);
+
+  const loadRecommendations = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      // TODO: Reemplazar con el ID real del usuario autenticado
+      const userId = 'current-user-id';
+      const matchRecommendations = await getPersonalizedRecommendations(userId, 3);
+      setRecommendations(matchRecommendations);
+    } catch (err) {
+      console.error('Error loading recommendations:', err);
+      setError('Error al cargar recomendaciones');
+      // Fallback a datos mock en caso de error
+      setRecommendations([]);
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
+
+  const formatDate = (date: any) => {
+    if (!date) return 'Fecha no disponible';
+    
+    const matchDate = date.toDate ? date.toDate() : new Date(date);
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    if (matchDate.toDateString() === today.toDateString()) {
+      return 'Hoy';
+    } else if (matchDate.toDateString() === tomorrow.toDateString()) {
+      return 'Mañana';
+    } else {
+      return matchDate.toLocaleDateString('es-ES', { 
+        weekday: 'long',
+        day: 'numeric',
+        month: 'short'
+      });
+    }
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+      minimumFractionDigits: 0
+    }).format(price);
+  };
 
   return (
     <div className="p-4 pb-32 bg-gradient-to-br from-[#172c44] to-[#00a884] min-h-screen">
@@ -93,93 +108,141 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
       </div>
 
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-white">Partidos Cercanos</h2>
+        <h2 className="text-white">Partidos Recomendados</h2>
         <Button 
           variant="ghost" 
           size="sm"
-          onClick={() => onNavigate('search')}
+          onClick={() => onNavigate('available-matches')}
           className="text-white hover:text-white/90"
         >
           Ver todos
         </Button>
       </div>
 
-      <div className="space-y-4">
-        {nearbyMatches.map((match) => (
-          <Card 
-            key={match.id} 
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => onNavigate('match-detail', match)}
-          >
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Badge 
-                      variant="secondary" 
-                      className="bg-[#f4b400] text-[#172c44]"
-                    >
-                      {match.sport}
-                    </Badge>
+      {isLoading ? (
+        <div className="flex justify-center items-center py-8">
+          <Loader2 className="animate-spin text-white" size={32} />
+        </div>
+      ) : error ? (
+        <Card className="p-4 mb-4">
+          <div className="flex items-center gap-2 text-amber-600">
+            <AlertTriangle size={20} />
+            <span>{error}</span>
+          </div>
+        </Card>
+      ) : recommendations.length === 0 ? (
+        <Card className="p-4 mb-4">
+          <div className="text-center text-gray-600">
+            <p>No hay partidos recomendados disponibles</p>
+            <Button 
+              variant="outline" 
+              className="mt-2"
+              onClick={() => onNavigate('available-matches')}
+            >
+              Explorar partidos disponibles
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {recommendations.map((recommendation) => {
+            const match = recommendation.match;
+            return (
+              <Card 
+                key={recommendation.matchId} 
+                className="cursor-pointer hover:shadow-md transition-shadow"
+                onClick={() => onNavigate('match-detail', match)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant="secondary" 
+                          className="bg-[#f4b400] text-[#172c44]"
+                        >
+                          {match.sport}
+                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Star className="text-[#f4b400]" size={14} fill="currentColor" />
+                          <span className="text-sm text-gray-600">{recommendation.score}/100</span>
+                        </div>
+                      </div>
+                      <h3 className="text-[#172c44] mt-1">{match.location?.name || match.courtName}</h3>
+                    </div>
+                    <span className="text-[#00a884]">{formatPrice(match.pricePerPlayer)}</span>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
                     <div className="flex items-center gap-1">
-                      <Star className="text-[#f4b400]" size={14} fill="currentColor" />
-                      <span className="text-sm text-gray-600">{match.rating}</span>
+                      <MapPin size={14} />
+                      <span>{match.location?.address || 'Ubicación no disponible'}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Calendar size={14} />
+                      <span>{formatDate(match.date)}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock size={14} />
+                      <span>{match.time}</span>
                     </div>
                   </div>
-                  <h3 className="text-[#172c44] mt-1">{match.location}</h3>
-                </div>
-                <span className="text-[#00a884]">{match.price}</span>
-              </div>
 
-              <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                <div className="flex items-center gap-1">
-                  <MapPin size={14} />
-                  <span>{match.distance}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Calendar size={14} />
-                  <span>{match.date}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Clock size={14} />
-                  <span>{match.time}</span>
-                </div>
-              </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-1 text-sm">
+                      <Users size={14} className="text-[#172c44]" />
+                      <span className="text-gray-600">
+                        {match.currentPlayers}/{match.maxPlayers} jugadores
+                      </span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-[#f4b400]">
+                        {match.maxPlayers - match.currentPlayers} cupos disponibles
+                      </span>
+                    </div>
+                  </div>
 
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1 text-sm">
-                  <Users size={14} className="text-[#172c44]" />
-                  <span className="text-gray-600">
-                    {match.totalPlayers - match.playersNeeded}/{match.totalPlayers} jugadores
-                  </span>
-                </div>
-                <div className="text-sm">
-                  <span className="text-[#f4b400]">
-                    {match.playersNeeded} cupos disponibles
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-2 pt-2 border-t border-gray-100">
-                <p className="text-sm text-gray-600">
-                  Capitán: <span className="text-[#172c44]">{match.captain}</span>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                  {recommendation.reasons.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <p className="text-sm text-gray-600">
+                        💡 {recommendation.reasons[0]}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mt-8">
         <h2 className="text-white mb-4">Accesos Rápidos</h2>
         <div className="grid grid-cols-2 gap-4">
-           <Button
-            variant="outline"
-            className="h-16 flex-col gap-2 border-[#00a884] text-[#00a884] hover:bg-[#00a884] hover:text-white"
+          <Button
+            className="h-16 flex-col gap-2 bg-[#00a884] hover:bg-[#00a884]/90 text-white"
             onClick={() => onNavigate('create')}
           >
             <Plus size={20} />
             Crear Partido
+          </Button>
+          <Button
+            variant="outline"
+            className="h-16 flex-col gap-2 border-[#00a884] text-[#00a884] hover:bg-[#00a884] hover:text-white"
+            onClick={() => onNavigate('available-matches')}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Buscar Partidos
+          </Button>
+          <Button
+            variant="outline"
+            className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]"
+            onClick={() => onNavigate('joined-matches')}
+          >
+            <Users size={20} />
+            Mis Partidos
           </Button>
           <Button
             variant="outline"

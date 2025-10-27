@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Users, Crown, Settings, Search, Filter, Trash2, MoreVertical } from 'lucide-react';
 import { notificationService } from '../../common/NotificationHelper';
 import { AppHeader } from '../../common/AppHeader';
+import { getUserTeams, TeamData } from '../../../services/teamService';
+import { auth } from '../../../Firebase/firebaseConfig';
 
 interface Team {
-  id: number;
+  id: string; // Cambiado de number a string para compatibilidad con Firebase
   name: string;
   sport: string;
   type: 'official' | 'temporary';
@@ -24,58 +26,68 @@ interface MyTeamsScreenProps {
 export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
   const [activeTab, setActiveTab] = useState<'official' | 'temporary'>('official');
   const [searchQuery, setSearchQuery] = useState('');
+  const [teams, setTeams] = useState<TeamData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data for user's teams
-  const [teams] = useState<Team[]>([
-    {
-      id: 1,
-      name: 'Los Tigres FC',
-      sport: 'Fútbol',
-      type: 'official',
-      currentPlayers: 8,
-      maxPlayers: 11,
-      role: 'captain',
-      image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200&h=200&fit=crop',
-      status: 'active',
-      lastActivity: 'Hace 2 días'
-    },
-    {
-      id: 2,
-      name: 'Baloncesto Elite',
-      sport: 'Básquet',
-      type: 'official',
-      currentPlayers: 5,
-      maxPlayers: 7,
-      role: 'member',
-      status: 'active',
-      lastActivity: 'Hace 1 semana'
-    },
-    {
-      id: 3,
-      name: 'Equipo Cancha Norte',
-      sport: 'Fútbol',
-      type: 'temporary',
-      currentPlayers: 6,
-      maxPlayers: 10,
-      role: 'member',
-      status: 'active',
-      lastActivity: 'Hace 3 horas'
-    },
-    {
-      id: 4,
-      name: 'Partido del Viernes',
-      sport: 'Fútbol',
-      type: 'temporary',
-      currentPlayers: 4,
-      maxPlayers: 8,
-      role: 'captain',
-      status: 'inactive',
-      lastActivity: 'Hace 1 mes'
-    }
-  ]);
+  // Cargar equipos del usuario desde Firebase
+  useEffect(() => {
+    const loadUserTeams = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Obtener el ID del usuario actual del contexto de autenticación
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+          console.log('No hay usuario autenticado');
+          setTeams([]);
+          return;
+        }
+        
+        console.log('Usuario actual autenticado:');
+        console.log('- UID:', currentUser.uid);
+        console.log('- Email:', currentUser.email);
+        console.log('- Display Name:', currentUser.displayName);
+        
+        console.log('Buscando equipos para usuario:', currentUser.uid);
+        const userTeams = await getUserTeams(currentUser.uid);
+        console.log('Equipos encontrados:', userTeams.length);
+        console.log('Detalles de equipos:', userTeams);
+        console.log('Array de equipos completo:', JSON.stringify(userTeams, null, 2));
+        
+        setTeams(userTeams as TeamData[]);
+      } catch (err) {
+        console.error('Error al cargar equipos:', err);
+        setError(err instanceof Error ? err.message : 'Error al cargar los equipos');
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const filteredTeams = teams
-    .filter(team => team.type === activeTab)
+    loadUserTeams();
+  }, []);
+
+  // Convertir equipos de Firebase al formato de la interfaz Team
+  const displayTeams = teams.map(team => ({
+    id: team.id || '', // Mantener como string, no convertir a number
+    name: team.name,
+    sport: team.sport,
+    type: team.status === 'active' ? 'official' : 'temporary' as 'official' | 'temporary',
+    currentPlayers: team.currentPlayers || 0,
+    maxPlayers: team.maxPlayers || 10,
+    role: team.captainId === auth.currentUser?.uid ? 'captain' : 'member' as 'captain' | 'member',
+    image: team.teamImage,
+    status: team.status as 'active' | 'inactive',
+    lastActivity: 'Reciente'
+  }));
+
+  console.log('Teams array length:', teams.length);
+  console.log('DisplayTeams array length:', displayTeams.length);
+  console.log('DisplayTeams:', displayTeams);
+
+  const filteredTeams = displayTeams
+    .filter(team => activeTab === 'official' ? team.status === 'active' : team.status === 'inactive')
     .filter(team => 
       team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       team.sport.toLowerCase().includes(searchQuery.toLowerCase())
@@ -96,7 +108,7 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
     if (confirm(`¿Estás seguro de que quieres iniciar el proceso de eliminación del equipo "${team.name}"? Esto notificará a todos los miembros para que voten.`)) {
       onNavigate('delete-team', {
         ...team,
-        captain: { id: 1, name: 'Juan Pérez' }, // Mock captain data
+        captain: { id: "1", name: 'Juan Pérez' }, // Mock captain data con string ID
         members: Array.from({ length: team.currentPlayers }, (_, i) => ({
           id: i + 1,
           name: i === 0 ? 'Juan Pérez' : `Jugador ${i + 1}`,

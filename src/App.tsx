@@ -1,14 +1,17 @@
 import { useState, useEffect } from "react";
 
 // --- INICIO: Importaciones para la prueba de Firebase ---
-import { db } from "./Firebase/firebaseConfig";
+import { db, auth } from "./Firebase/firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, User } from "firebase/auth";
 // --- FIN: Importaciones para la prueba de Firebase ---
 
 import { LoginScreen } from "./components/screens/auth/LoginScreen";
 import { HomeScreen } from "./components/screens/home/HomeScreen";
 import { MatchDetailScreen } from "./components/screens/matches/MatchDetailScreen";
 import { CreateMatchScreen } from "./components/screens/matches/CreateMatchScreen";
+import { AvailableMatchesScreen } from "./components/screens/matches/AvailableMatchesScreen";
+import { JoinedMatchesScreen } from "./components/screens/matches/JoinedMatchesScreen";
 import { SearchScreen } from "./components/screens/home/SearchScreen";
 import { ProfileScreen } from "./components/screens/profile/ProfileScreen";
 import { ChatScreen } from "./components/screens/home/ChatScreen";
@@ -41,13 +44,41 @@ export default function App() {
   );
   const [currentScreen, setCurrentScreen] = useState("home");
   const [screenData, setScreenData] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // --- INICIO: CÓDIGO DE PRUEBA DE FIREBASE ---
+  // Monitorear el estado de autenticación de Firebase
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log("Estado de autenticación cambió:", user ? "Autenticado" : "No autenticado");
+      setCurrentUser(user);
+      
+      if (user) {
+        console.log("Usuario autenticado:", user.uid);
+        console.log("Email:", user.email);
+        // Si hay un usuario autenticado pero la app no está marcada como logueada,
+        // mantener el estado actual hasta que el LoginScreen complete el proceso
+      } else {
+        console.log("Usuario no autenticado");
+        // Si no hay usuario autenticado, cerrar sesión en la app
+        setIsLoggedIn(false);
+        setError(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // --- INICIO: CÓDIGO DE PRUEBA DE FIREBASE (DESHABILITADO) ---
+  // Este código de prueba está causando errores porque intenta acceder a un documento
+  // que no existe. Los datos reales de la app (equipos, partidos) sí funcionan correctamente.
+  /*
   useEffect(() => {
     // Solo ejecuta la prueba si el usuario ha iniciado sesión.
-    if (isLoggedIn) {
+    if (isLoggedIn && currentUser) {
       const verificarConexionFirebase = async () => {
         console.log("Iniciando prueba de conexión con Firebase...");
+        console.log("Usuario actual:", currentUser.uid);
         try {
           // IMPORTANTE: Reemplaza este ID con el ID real de tu documento de prueba en Firestore.
           const documentoId = "ID_DEL_DOCUMENTO_DE_PRUEBA";
@@ -68,23 +99,41 @@ export default function App() {
 
       verificarConexionFirebase();
     }
-  }, [isLoggedIn]); // Se ejecuta cada vez que 'isLoggedIn' cambia a true.
-  // --- FIN: CÓDIGO DE PRUEBA DE FIREBASE ---
+  }, [isLoggedIn, currentUser]); // Se ejecuta cada vez que 'isLoggedIn' o 'currentUser' cambia.
+  */
+  // --- FIN: CÓDIGO DE PRUEBA DE FIREBASE (DESHABILITADO) ---
 
   const handleLogin = (type: "player" | "owner") => {
-    setIsLoggedIn(true);
-    setUserType(type);
-    // Set different initial screens based on user type
-    setCurrentScreen(
-      type === "owner" ? "owner-dashboard" : "home",
-    );
+    // Solo marcar como logueado si hay un usuario autenticado en Firebase
+    if (currentUser) {
+      setIsLoggedIn(true);
+      setUserType(type);
+      // Set different initial screens based on user type
+      setCurrentScreen(
+        type === "owner" ? "owner-dashboard" : "home",
+      );
+      console.log("Usuario logueado correctamente con Firebase Auth");
+    } else {
+      console.error("Error: Intentando hacer login sin autenticación de Firebase");
+      setError("Error de autenticación. Por favor, intenta de nuevo.");
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      // Cerrar sesión en Firebase Auth
+      await auth.signOut();
+      console.log("Sesión cerrada en Firebase Auth");
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+    }
+    
+    // Limpiar estado local
     setIsLoggedIn(false);
     setUserType("player");
     setCurrentScreen("home");
     setScreenData(null);
+    setCurrentUser(null);
   };
 
   const handleNavigate = (screen: string, data?: any) => {
@@ -101,7 +150,26 @@ export default function App() {
   };
 
   if (!isLoggedIn) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return (
+      <div>
+        <LoginScreen onLogin={handleLogin} />
+        {error && (
+          <div style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#ff4444',
+            color: 'white',
+            padding: '10px 20px',
+            borderRadius: '5px',
+            zIndex: 1000
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+    );
   }
 
   const renderScreen = () => {
@@ -187,7 +255,7 @@ export default function App() {
               setCurrentScreen("my-teams");
               setScreenData(null);
             }}
-            currentUserId={1} // In real app, this would come from auth context
+            currentUserId="1" // Cambiado a string para compatibilidad
           />
         );
       default:
@@ -210,6 +278,20 @@ export default function App() {
           );
         case "create":
           return <CreateMatchScreen onBack={handleBack} />;
+        case "available-matches":
+          return (
+            <AvailableMatchesScreen
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+            />
+          );
+        case "joined-matches":
+          return (
+            <JoinedMatchesScreen
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+            />
+          );
         case "search":
           return <SearchScreen onNavigate={handleNavigate} />;
         case "profile":
