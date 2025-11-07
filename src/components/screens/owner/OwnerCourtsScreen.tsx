@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Users, Clock, Star, Settings, Loader2, AlertTriangle, Building } from 'lucide-react';
+import { Plus, Users, Clock, Star, Settings, Loader2, AlertTriangle, Building, MoreVertical, Edit, Trash2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -7,14 +7,41 @@ import { AppHeader } from '../../common/AppHeader';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
-import { collection, query, where, onSnapshot, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  QueryDocumentSnapshot, 
+  DocumentData,
+  doc, // <-- Importado para borrar
+  deleteDoc // <-- Importado para borrar
+} from 'firebase/firestore';
 // --- FIN: Importaciones de Firebase ---
+
+// --- INICIO: Importaciones de UI para el Menú y Alerta ---
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../ui/alert-dialog";
+// --- FIN: Importaciones de UI ---
 
 interface Court extends DocumentData {
   id: string;
   name: string;
   sport: string;
-  // Agrega aquí cualquier otro campo que esperes de tus canchas
 }
 
 interface OwnerCourtsScreenProps {
@@ -26,6 +53,11 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // --- NUEVO ESTADO para el diálogo de eliminación ---
+  const [isAlertOpen, setIsAlertOpen] = useState(false);
+  const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
+  // --- FIN NUEVO ESTADO ---
+
   useEffect(() => {
     const currentUser = auth.currentUser;
     if (!currentUser) {
@@ -33,20 +65,15 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
       setLoading(false);
       return;
     }
-
-    // Creamos una consulta para traer solo las canchas del dueño actual
     const courtsQuery = query(
       collection(db, "cancha"), 
       where("ownerId", "==", currentUser.uid)
     );
-
-    // onSnapshot escucha cambios en tiempo real
     const unsubscribe = onSnapshot(courtsQuery, (querySnapshot) => {
       const courtsData = querySnapshot.docs.map((doc: QueryDocumentSnapshot) => ({
         id: doc.id,
         ...doc.data(),
       })) as Court[];
-      
       setCourts(courtsData);
       setLoading(false);
     }, (err) => {
@@ -54,10 +81,8 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
       setError("No se pudieron cargar tus canchas. Inténtalo de nuevo.");
       setLoading(false);
     });
-
-    // Limpiamos el listener cuando el componente se desmonta para evitar fugas de memoria
     return () => unsubscribe();
-  }, []); // El array vacío asegura que esto se ejecute solo una vez al montar el componente
+  }, []);
 
   const getSportIcon = (sport: string) => {
     switch (sport) {
@@ -73,11 +98,45 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
 
   const calculateAverageRating = () => {
     if (courts.length === 0) return 0;
-    // Asumimos que hay un campo 'rating' en tus datos, si no, puedes quitar esta tarjeta
     const totalRating = courts.reduce((acc, court) => acc + (court.rating || 0), 0);
     return (totalRating / courts.length).toFixed(1);
   };
   
+  // --- NUEVAS FUNCIONES para Editar y Eliminar ---
+
+  const handleEditClick = (e: React.MouseEvent, court: Court) => {
+    e.stopPropagation(); // Evitar que se active el clic de la tarjeta
+    // Asumimos que tienes una pantalla 'edit-court'
+    onNavigate('edit-court', court); 
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, court: Court) => {
+    e.stopPropagation(); // Evitar que se active el clic de la tarjeta
+    setSelectedCourt(court);
+    setIsAlertOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedCourt) return;
+
+    try {
+      // Eliminar el documento de la cancha
+      await deleteDoc(doc(db, "cancha", selectedCourt.id));
+      
+      // Opcional: mostrar un toast de éxito
+      // toast.success("Cancha eliminada"); 
+      
+    } catch (err) {
+      console.error("Error al eliminar la cancha: ", err);
+      setError("No se pudo eliminar la cancha.");
+    } finally {
+      // Cerrar el diálogo
+      setIsAlertOpen(false);
+      setSelectedCourt(null);
+    }
+  };
+  // --- FIN NUEVAS FUNCIONES ---
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#f4b400] to-[#e6a200] p-4 text-[#172c44]">
@@ -128,7 +187,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
             </Card>
           </div>
           
-          {/* Lista de Canchas o Mensaje de "No hay canchas" */}
+          {/* Lista de Canchas */}
           {courts.length > 0 ? (
             <div className="space-y-4">
               {courts.map((court) => (
@@ -156,7 +215,30 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
                     </div>
                      <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
                        <Button variant="outline" size="sm" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-['Outfit'] font-semibold rounded-xl text-xs h-8 flex-1" onClick={() => onNavigate('court-detail', court)}>Ver Detalles</Button>
-                       <Button variant="outline" size="icon" className="border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl h-8 w-8" onClick={() => onNavigate('court-settings', court)}><Settings size={14} /></Button>
+                       
+                       {/* --- BOTÓN DE MENÚ MODIFICADO --- */}
+                       <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            size="icon" 
+                            className="border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl h-8 w-8"
+                            onClick={(e) => e.stopPropagation()} // Evitar que el clic abra la tarjeta
+                          >
+                            <MoreVertical size={16} />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem onClick={(e) => handleEditClick(e, court)}>
+                            <Edit size={14} className="mr-2" /> Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => handleDeleteClick(e, court)} className="text-red-600">
+                            <Trash2 size={14} className="mr-2" /> Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                       {/* --- FIN DEL BOTÓN DE MENÚ --- */}
+
                      </div>
                   </CardContent>
                 </Card>
@@ -187,6 +269,30 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
           </Card>
         </div>
       </div>
+
+      {/* --- DIÁLOGO DE CONFIRMACIÓN DE ELIMINACIÓN --- */}
+      <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro de eliminar esta cancha?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vas a eliminar la cancha "<span className="font-bold">{selectedCourt?.name}</span>". 
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setSelectedCourt(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* --- FIN DEL DIÁLOGO --- */}
+
     </div>
   );
 }

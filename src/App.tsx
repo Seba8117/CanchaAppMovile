@@ -37,6 +37,10 @@ import { Navigation } from "./components/navigation/Navigation";
 import { MyBookingsScreen } from "./components/screens/booking/MyBookingsScreen";
 import { OwnerNavigation } from "./components/navigation/OwnerNavigation";
 
+// --- 1. IMPORTACIÓN AÑADIDA ---
+import { EditCourtScreen } from "./components/screens/owner/EditCourtScreen";
+
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userType, setUserType] = useState<"player" | "owner">(
@@ -56,11 +60,8 @@ export default function App() {
       if (user) {
         console.log("Usuario autenticado:", user.uid);
         console.log("Email:", user.email);
-        // Si hay un usuario autenticado pero la app no está marcada como logueada,
-        // mantener el estado actual hasta que el LoginScreen complete el proceso
       } else {
         console.log("Usuario no autenticado");
-        // Si no hay usuario autenticado, cerrar sesión en la app
         setIsLoggedIn(false);
         setError(null);
       }
@@ -69,46 +70,23 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- INICIO: CÓDIGO DE PRUEBA DE FIREBASE (DESHABILITADO) ---
-  // Este código de prueba está causando errores porque intenta acceder a un documento
-  // que no existe. Los datos reales de la app (equipos, partidos) sí funcionan correctamente.
+  // --- CÓDIGO DE PRUEBA DE FIREBASE (DESHABILITADO) ---
   /*
   useEffect(() => {
-    // Solo ejecuta la prueba si el usuario ha iniciado sesión.
     if (isLoggedIn && currentUser) {
       const verificarConexionFirebase = async () => {
-        console.log("Iniciando prueba de conexión con Firebase...");
-        console.log("Usuario actual:", currentUser.uid);
-        try {
-          // IMPORTANTE: Reemplaza este ID con el ID real de tu documento de prueba en Firestore.
-          const documentoId = "ID_DEL_DOCUMENTO_DE_PRUEBA";
-          const docRef = doc(db, "pruebas", documentoId);
-          
-          const docSnap = await getDoc(docRef);
-
-          if (docSnap.exists()) {
-            console.log("✅ ¡CONEXIÓN CON FIREBASE EXITOSA!");
-            console.log("Datos recibidos:", docSnap.data());
-          } else {
-            console.warn("⚠️ Conectado a Firebase, pero no se encontró el documento. Revisa el ID.");
-          }
-        } catch (error) {
-          console.error("❌ ERROR: No se pudo conectar a Firebase.", error);
-        }
+        // ... (código de prueba comentado)
       };
-
       verificarConexionFirebase();
     }
-  }, [isLoggedIn, currentUser]); // Se ejecuta cada vez que 'isLoggedIn' o 'currentUser' cambia.
+  }, [isLoggedIn, currentUser]);
   */
-  // --- FIN: CÓDIGO DE PRUEBA DE FIREBASE (DESHABILITADO) ---
+  // --- FIN CÓDIGO DE PRUEBA ---
 
   const handleLogin = (type: "player" | "owner") => {
-    // Solo marcar como logueado si hay un usuario autenticado en Firebase
     if (currentUser) {
       setIsLoggedIn(true);
       setUserType(type);
-      // Set different initial screens based on user type
       setCurrentScreen(
         type === "owner" ? "owner-dashboard" : "home",
       );
@@ -121,14 +99,12 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      // Cerrar sesión en Firebase Auth
       await auth.signOut();
       console.log("Sesión cerrada en Firebase Auth");
     } catch (error) {
       console.error("Error al cerrar sesión:", error);
     }
     
-    // Limpiar estado local
     setIsLoggedIn(false);
     setUserType("player");
     setCurrentScreen("home");
@@ -142,7 +118,6 @@ export default function App() {
   };
 
   const handleBack = () => {
-    // Return to appropriate default screen based on user type
     setCurrentScreen(
       userType === "owner" ? "owner-dashboard" : "home",
     );
@@ -251,7 +226,6 @@ export default function App() {
             teamData={screenData}
             onBack={handleBack}
             onTeamDeleted={() => {
-              // Navigate back to teams list after deletion
               setCurrentScreen("my-teams");
               setScreenData(null);
             }}
@@ -340,6 +314,18 @@ export default function App() {
               onNavigate={handleNavigate}
             />
           );
+          
+        // --- 2. BLOQUE 'CASE' AÑADIDO ---
+        case "edit-court":
+          return (
+            <EditCourtScreen
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+              courtData={screenData} // Aquí le pasas los datos de la cancha
+            />
+          );
+        // --- FIN DEL BLOQUE AÑADIDO ---
+
         case "create-tournament":
           return (
             <CreateTournamentScreen
@@ -381,6 +367,7 @@ export default function App() {
     "edit-profile",
     "edit-owner-profile",
     "add-court",
+    "edit-court", // <-- También lo añadí aquí para ocultar el menú en la pantalla de edición
     "create-tournament",
     "tournament-management",
     "team-details",

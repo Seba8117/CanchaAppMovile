@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle } from 'lucide-react';
+// 1. AÑADIDO 'MessageSquare'
+import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -164,6 +165,18 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
         titleClassName="font-['Outfit'] font-black text-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-orange-500 bg-clip-text text-transparent"
         rightContent={
           <div className="flex items-center gap-2">
+            
+            {/* --- BOTÓN DE CHAT AÑADIDO --- */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="text-cyan-600 border-cyan-200 bg-white/80 backdrop-blur-sm hover:bg-cyan-50 shadow-lg"
+              onClick={() => onNavigate('owner-chat')}
+            >
+              <MessageSquare size={20} />
+            </Button>
+            {/* --- FIN DEL BOTÓN DE CHAT --- */}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button 
@@ -186,11 +199,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   className="text-red-600 focus:text-red-600"
-                  onClick={() => {
-                    if (window.confirm('¿Estás seguro que quieres cerrar tu sesión empresarial?')) {
-                      onLogout?.();
-                    }
-                  }}
+                  onClick={() => onLogout?.()}
                 >
                   <LogOut size={18} className="mr-2" />
                   Cerrar Sesión
@@ -264,6 +273,30 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
               </div>
             </CardContent>
           </Card>
+
+          {/* --- TARJETA DE CHATS (YA ESTABA AQUÍ) --- */}
+          <Card 
+            className="bg-gradient-to-br from-cyan-500 via-blue-600 to-sky-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2"
+            onClick={() => onNavigate('owner-chat')} // Navega a la pantalla de chat del dueño
+          >
+            <CardContent className="p-5 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
+              <div className="relative z-10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+                      <MessageSquare size={26} className="text-white" />
+                    </div>
+                    <div>
+                      <p className="font-['Outfit'] font-black text-4xl text-white leading-none">Chats</p>
+                      <p className="font-['Outfit'] font-semibold text-sm text-cyan-100 mt-1">💬 Mis Conversaciones</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          {/* --- FIN DE LA TARJETA DE CHATS --- */}
 
           {/* Torneos Card */}
           <Card className="bg-gradient-to-br from-violet-500 via-purple-600 to-fuchsia-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
@@ -367,7 +400,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                       <div className="text-right">
                         <p className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                           ${booking.amount.toLocaleString()}
-                        </p>
+                        </p> {/* <-- CORRECCIÓN AQUÍ */}
                         <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">COP</p>
                         
                         {/* Estado de la reserva */}
