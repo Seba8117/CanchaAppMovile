@@ -1,48 +1,31 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
     // Reglas para la colección de matches
     match /matches/{matchId} {
-      // Permitir lectura a todos los usuarios autenticados
       allow read: if request.auth != null;
-      
-      // Permitir crear matches a usuarios autenticados
       allow create: if request.auth != null 
         && request.auth.uid != null
         && request.resource.data.captainId == request.auth.uid;
-      
-      // Permitir actualizar matches solo al capitán o para unirse/salir del partido
       allow update: if request.auth != null && (
-        // El capitán puede actualizar todo
         resource.data.captainId == request.auth.uid ||
-        // Cualquier usuario puede unirse/salir (solo modificar players array)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players', 'currentPlayers', 'updatedAt']))
       );
-      
-      // Permitir eliminar solo al capitán
       allow delete: if request.auth != null 
         && resource.data.captainId == request.auth.uid;
     }
     
     // Reglas para la colección de teams
     match /teams/{teamId} {
-      // Permitir lectura a todos los usuarios autenticados
       allow read: if request.auth != null;
-      
-      // Permitir crear teams a usuarios autenticados
       allow create: if request.auth != null 
         && request.auth.uid != null
         && request.resource.data.captainId == request.auth.uid;
-      
-      // Permitir actualizar teams solo al capitán o para unirse/salir del equipo
       allow update: if request.auth != null && (
-        // El capitán puede actualizar todo
         resource.data.captainId == request.auth.uid ||
-        // Cualquier usuario puede unirse/salir (solo modificar members array)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'currentPlayers', 'updatedAt']))
       );
-      
-      // Permitir eliminar solo al capitán
       allow delete: if request.auth != null 
         && resource.data.captainId == request.auth.uid;
     }
@@ -50,16 +33,14 @@ service cloud.firestore {
     // Reglas para la colección de courts/cancha
     match /courts/{courtId} {
       allow read: if request.auth != null;
-      // Solo owners pueden crear/actualizar/eliminar courts
       allow write: if request.auth != null 
-        && request.auth.uid != null;
+        && request.auth.uid != null; // Mejorar esto luego para que solo escriba el 'dueno'
     }
     
     match /cancha/{canchaId} {
       allow read: if request.auth != null;
-      // Solo owners pueden crear/actualizar/eliminar canchas
       allow write: if request.auth != null 
-        && request.auth.uid != null;
+        && request.auth.uid != null; // Mejorar esto luego para que solo escriba el 'dueno'
     }
     
     // Reglas para jugadores
@@ -67,8 +48,8 @@ service cloud.firestore {
       // Los usuarios pueden leer y escribir solo su propia información
       allow read, write: if request.auth != null 
         && request.auth.uid == userId;
-      // Permitir lectura de otros jugadores para búsquedas
-      allow read: if request.auth != null;
+      // Permitir lectura de otros jugadores para búsquedas (si es necesario)
+      // allow read: if request.auth != null; // Cuidado: Esta regla anula la anterior si se descomenta
     }
     
     // Reglas para dueños
@@ -76,23 +57,38 @@ service cloud.firestore {
       // Los usuarios pueden leer y escribir solo su propia información
       allow read, write: if request.auth != null 
         && request.auth.uid == userId;
-      // Permitir lectura de otros dueños para búsquedas
-      allow read: if request.auth != null;
+      // Permitir lectura de otros dueños para búsquedas (si es necesario)
+      // allow read: if request.auth != null;
     }
     
     // Reglas para torneos
     match /torneo/{torneoId} {
       allow read: if request.auth != null;
-      // Solo owners pueden crear/actualizar/eliminar torneos
       allow write: if request.auth != null 
-        && request.auth.uid != null;
+        && request.auth.uid != null; // Mejorar esto luego
     }
     
     // Reglas para usuarios (fallback)
     match /users/{userId} {
-      // Los usuarios pueden leer y escribir solo su propia información
       allow read, write: if request.auth != null 
         && request.auth.uid == userId;
+    }
+    
+    // --- REGLAS PARA CHATS (ESTO FALTABA) ---
+    match /chats/{chatId} {
+      // Un usuario SÓLO puede leer un chat si su ID está en la lista de participantes.
+      // Esto es lo que soluciona tu error de "permiso denegado".
+      allow read: if request.auth != null && request.auth.uid in resource.data.participantsUids;
+      
+      // Un usuario autenticado puede crear o actualizar un chat (al unirse a un partido)
+      allow create, update: if request.auth != null; 
+      
+      // Permitir que los participantes lean y escriban mensajes en la subcolección
+      match /messages/{messageId} {
+        allow read, create: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantsUids;
+        // No permitir borrar o editar mensajes (opcional, pero más seguro)
+        allow update, delete: if false;
+      }
     }
   }
 }

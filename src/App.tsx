@@ -390,6 +390,7 @@ export default function App() {
     "create-team",
     "delete-team",
     "my-bookings",
+    "chat",
   ].includes(currentScreen);
 
   return (

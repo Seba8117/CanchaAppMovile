@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Users, Crown, Settings, Search, Filter, Trash2, MoreVertical } from 'lucide-react';
-import { notificationService } from '../../common/NotificationHelper';
+import { ArrowLeft, Plus, Users, Crown, Settings, Search, Filter, Trash2, MoreVertical, Loader2, AlertTriangle } from 'lucide-react';
+// Removido 'notificationService' si no se usa. Añadidas importaciones de Firebase.
 import { AppHeader } from '../../common/AppHeader';
-import { getUserTeams, TeamData } from '../../../services/teamService';
-import { auth } from '../../../Firebase/firebaseConfig';
+import { TeamData } from '../../../services/teamService'; // Mantenemos tu tipo de datos
+import { auth, db } from '../../../Firebase/firebaseConfig';
+import { collection, query, where, onSnapshot, DocumentData } from 'firebase/firestore';
+import { User as FirebaseUser } from 'firebase/auth';
 
 interface Team {
-  id: string; // Cambiado de number a string para compatibilidad con Firebase
+  id: string; 
   name: string;
   sport: string;
   type: 'official' | 'temporary';
@@ -24,67 +26,102 @@ interface MyTeamsScreenProps {
 }
 
 export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(auth.currentUser);
   const [activeTab, setActiveTab] = useState<'official' | 'temporary'>('official');
   const [searchQuery, setSearchQuery] = useState('');
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Cargar equipos del usuario desde Firebase
+  // Escuchar cambios de autenticación
   useEffect(() => {
-    const loadUserTeams = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Obtener el ID del usuario actual del contexto de autenticación
-        const currentUser = auth.currentUser;
-        if (!currentUser) {
-          console.log('No hay usuario autenticado');
-          setTeams([]);
-          return;
-        }
-        
-        console.log('Usuario actual autenticado:');
-        console.log('- UID:', currentUser.uid);
-        console.log('- Email:', currentUser.email);
-        console.log('- Display Name:', currentUser.displayName);
-        
-        console.log('Buscando equipos para usuario:', currentUser.uid);
-        const userTeams = await getUserTeams(currentUser.uid);
-        console.log('Equipos encontrados:', userTeams.length);
-        console.log('Detalles de equipos:', userTeams);
-        console.log('Array de equipos completo:', JSON.stringify(userTeams, null, 2));
-        
-        setTeams(userTeams as TeamData[]);
-      } catch (err) {
-        console.error('Error al cargar equipos:', err);
-        setError(err instanceof Error ? err.message : 'Error al cargar los equipos');
-      } finally {
-        setIsLoading(false);
-      }
+    const unsubscribeAuth = auth.onAuthStateChanged(user => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Cargar equipos del usuario en tiempo real usando onSnapshot
+  useEffect(() => {
+    if (!currentUser) {
+      setTeams([]);
+      setIsLoading(false);
+      setError("No hay usuario autenticado.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    
+    let captainTeams: TeamData[] = [];
+    let memberTeams: TeamData[] = [];
+
+    // Función para combinar y actualizar el estado
+    const combineAndSetTeams = () => {
+      const allTeamsMap = new Map<string, TeamData>();
+      // Añadir equipos donde soy miembro
+      memberTeams.forEach(team => {
+        if (team && team.id) allTeamsMap.set(team.id, team);
+      });
+      // Añadir/Sobrescribir equipos donde soy capitán (para asegurar el rol correcto)
+      captainTeams.forEach(team => {
+        if (team && team.id) allTeamsMap.set(team.id, team);
+      });
+      
+      setTeams(Array.from(allTeamsMap.values()));
+      setIsLoading(false);
     };
 
-    loadUserTeams();
-  }, []);
+    // Consulta 1: Equipos donde soy capitán
+    const qCaptain = query(
+      collection(db, "teams"), 
+      where("captainId", "==", currentUser.uid)
+    );
+    
+    // Consulta 2: Equipos donde estoy en la lista de miembros
+    const qMember = query(
+      collection(db, "teams"), 
+      where("members", "array-contains", currentUser.uid)
+    );
+
+    const unsubCaptain = onSnapshot(qCaptain, (snapshot) => {
+      captainTeams = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as TeamData[];
+      combineAndSetTeams(); // Combinar resultados
+    }, (err) => {
+      console.error('Error (captain teams):', err);
+      setError('Error al cargar equipos');
+      setIsLoading(false);
+    });
+
+    const unsubMember = onSnapshot(qMember, (snapshot) => {
+      memberTeams = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as TeamData[];
+      combineAndSetTeams(); // Combinar resultados
+    }, (err) => {
+      console.error('Error (member teams):', err);
+      setError('Error al cargar equipos');
+      setIsLoading(false);
+    });
+
+    // Devolver la función de limpieza para ambos listeners
+    return () => {
+      unsubCaptain();
+      unsubMember();
+    };
+  }, [currentUser]); // Se re-ejecuta si el usuario cambia
 
   // Convertir equipos de Firebase al formato de la interfaz Team
   const displayTeams = teams.map(team => ({
-    id: team.id || '', // Mantener como string, no convertir a number
+    id: team.id || '',
     name: team.name,
     sport: team.sport,
     type: team.status === 'active' ? 'official' : 'temporary' as 'official' | 'temporary',
-    currentPlayers: team.currentPlayers || 0,
+    currentPlayers: team.currentPlayers || team.members?.length || 0, // Usar currentPlayers o calcular por miembros
     maxPlayers: team.maxPlayers || 10,
     role: team.captainId === auth.currentUser?.uid ? 'captain' : 'member' as 'captain' | 'member',
     image: team.teamImage,
     status: team.status as 'active' | 'inactive',
-    lastActivity: 'Reciente'
+    lastActivity: 'Reciente' // Puedes actualizar esto con team.lastMessageTimestamp si lo tienes
   }));
-
-  console.log('Teams array length:', teams.length);
-  console.log('DisplayTeams array length:', displayTeams.length);
-  console.log('DisplayTeams:', displayTeams);
 
   const filteredTeams = displayTeams
     .filter(team => activeTab === 'official' ? team.status === 'active' : team.status === 'inactive')
@@ -102,22 +139,13 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
   };
 
   const handleDeleteTeam = (e: React.MouseEvent, team: Team) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation(); // Prevenir clic en la tarjeta
     
-    // Show confirmation first
-    if (confirm(`¿Estás seguro de que quieres iniciar el proceso de eliminación del equipo "${team.name}"? Esto notificará a todos los miembros para que voten.`)) {
-      onNavigate('delete-team', {
-        ...team,
-        captain: { id: "1", name: 'Juan Pérez' }, // Mock captain data con string ID
-        members: Array.from({ length: team.currentPlayers }, (_, i) => ({
-          id: i + 1,
-          name: i === 0 ? 'Juan Pérez' : `Jugador ${i + 1}`,
-          role: i === 0 ? 'captain' : 'member',
-          image: undefined
-        }))
-      });
-    }
+    // Navegar directamente a la pantalla de confirmación de eliminación
+    onNavigate('delete-team', team);
   };
+  
+  // --- RENDERIZADO ---
 
   const renderTeamCard = (team: Team) => (
     <div
@@ -130,11 +158,7 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
       >
         <div className="relative">
           {team.image ? (
-            <img
-              src={team.image}
-              alt={team.name}
-              className="w-12 h-12 rounded-lg object-cover"
-            />
+            <img src={team.image} alt={team.name} className="w-12 h-12 rounded-lg object-cover" />
           ) : (
             <div className="w-12 h-12 bg-[#e5e5e5] rounded-lg flex items-center justify-center">
               <Users className="h-6 w-6 text-[#666666]" />
@@ -149,9 +173,9 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-[#172c44] truncate">{team.name}</h3>
+            <h3 className="text-[#172c44] font-semibold truncate">{team.name}</h3>
             <div className="flex items-center space-x-2">
-              <span className={`text-sm ${getTeamStatusColor(team.status)}`}>
+              <span className={`text-sm font-medium ${getTeamStatusColor(team.status)}`}>
                 {getTeamStatusText(team.status)}
               </span>
             </div>
@@ -184,27 +208,51 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
   );
 
   const renderEmptyState = () => (
-    <div className="text-center py-12">
+    <div className="text-center py-12 bg-white/80 rounded-lg backdrop-blur-sm">
       <Users className="h-16 w-16 text-[#e5e5e5] mx-auto mb-4" />
-      <h3 className="text-[#172c44] mb-2">
+      <h3 className="text-[#172c44] font-bold mb-2">
         {activeTab === 'official' ? 'No tienes equipos oficiales' : 'No tienes equipos temporales'}
       </h3>
-      <p className="text-[#666666] mb-6">
+      <p className="text-[#666666] mb-6 px-4">
         {activeTab === 'official' 
-          ? 'Crea tu primer equipo oficial para participar en torneos'
-          : 'Los equipos temporales se crean automáticamente al unirse a partidos'
+          ? 'Crea tu primer equipo oficial o únete a uno existente.'
+          : 'Los equipos temporales se crean al unirte a partidos.'
         }
       </p>
       {activeTab === 'official' && (
         <button
           onClick={() => onNavigate('create-team')}
-          className="bg-[#f4b400] text-[#172c44] px-6 py-3 rounded-lg hover:bg-[#e6a200] transition-colors"
+          className="bg-[#f4b400] text-[#172c44] px-6 py-3 rounded-lg hover:bg-[#e6a200] transition-colors font-semibold"
         >
           Crear Equipo
         </button>
       )}
     </div>
   );
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="text-center py-12">
+          <Loader2 className="h-12 w-12 text-white animate-spin mx-auto" />
+        </div>
+      );
+    }
+    if (error) {
+      return (
+        <div className="text-center py-12 bg-white/80 rounded-lg backdrop-blur-sm p-4">
+           <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+           <h3 className="text-red-700 font-semibold">Error al cargar equipos</h3>
+           <p className="text-red-600 text-sm">{error}</p>
+        </div>
+      );
+    }
+    return filteredTeams.length > 0 ? (
+      <div>{filteredTeams.map(renderTeamCard)}</div>
+    ) : (
+      renderEmptyState()
+    );
+  };
 
   return (
     <div className="bg-gradient-to-br from-[#172c44] to-[#00a884] min-h-screen pb-24">
@@ -224,26 +272,26 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
         }
       />
 
-      {/* Search bar over gradient background */}
+      {/* Search bar */}
       <div className="px-4 pt-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-[#666666]" />
           <input
             type="text"
-            placeholder="Buscar equipos..."
+            placeholder="Buscar en mis equipos..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-white/90 backdrop-blur-sm border border-white/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f4b400] shadow-sm"
+            className="w-full pl-10 pr-4 py-3 bg-white/90 backdrop-blur-sm border border-white/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#f4b400] shadow-sm text-gray-900"
           />
         </div>
       </div>
 
-      {/* Tabs over gradient background */}
+      {/* Tabs */}
       <div className="px-4 pt-4">
         <div className="flex bg-white/90 backdrop-blur-sm rounded-lg p-1 mb-4 shadow-sm">
           <button
             onClick={() => setActiveTab('official')}
-            className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
+            className={`flex-1 py-2 px-4 rounded-lg transition-colors font-semibold ${
               activeTab === 'official'
                 ? 'bg-[#f4b400] text-[#172c44] shadow-sm'
                 : 'text-[#666666] hover:bg-white/50'
@@ -253,7 +301,7 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
           </button>
           <button
             onClick={() => setActiveTab('temporary')}
-            className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
+            className={`flex-1 py-2 px-4 rounded-lg transition-colors font-semibold ${
               activeTab === 'temporary'
                 ? 'bg-[#f4b400] text-[#172c44] shadow-sm'
                 : 'text-[#666666] hover:bg-white/50'
@@ -266,41 +314,11 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
 
       {/* Content */}
       <div className="p-4">
-        {activeTab === 'official' && (
-          <div className="bg-[#e8f5e8] p-4 rounded-lg mb-4 border-l-4 border-[#00a884]">
-            <h3 className="text-[#172c44] mb-1">Equipos Oficiales</h3>
-            <p className="text-[#666666] mb-2">
-              Estos equipos son permanentes y pueden participar en torneos y partidos casuales. 
-              Como capitán puedes gestionar miembros y configuración.
-            </p>
-            <div className="flex items-center space-x-2 text-[#666666]">
-              <Trash2 className="h-4 w-4 text-red-500" />
-              <span className="text-sm">Solo los capitanes pueden eliminar equipos (requiere votación)</span>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'temporary' && (
-          <div className="bg-[#fff4e6] p-4 rounded-lg mb-4 border-l-4 border-[#f4b400]">
-            <h3 className="text-[#172c44] mb-1">Equipos Temporales</h3>
-            <p className="text-[#666666]">
-              Se crean automáticamente cuando te unes a partidos. Son específicos para cada match 
-              y se disuelven al finalizar.
-            </p>
-          </div>
-        )}
-
-        {filteredTeams.length > 0 ? (
-          <div>
-            {filteredTeams.map(renderTeamCard)}
-          </div>
-        ) : (
-          renderEmptyState()
-        )}
+        {renderContent()}
       </div>
 
       {/* Fixed create button for official teams */}
-      {activeTab === 'official' && filteredTeams.length > 0 && (
+      {activeTab === 'official' && !isLoading && !error && (
         <button
           onClick={() => onNavigate('create-team')}
           className="fixed bottom-32 right-6 bg-[#f4b400] text-[#172c44] p-4 rounded-full shadow-lg hover:bg-[#e6a200] transition-colors z-40"

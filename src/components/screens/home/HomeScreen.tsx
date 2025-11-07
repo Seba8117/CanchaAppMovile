@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Calendar, Users, Clock, Star, Plus, Loader2, AlertTriangle } from 'lucide-react';
+import { MapPin, Calendar, Users, Clock, Star, Plus, Loader2, AlertTriangle, MessageCircle } from 'lucide-react'; // Ícono de chat añadido
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -226,16 +226,18 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
             <Plus size={20} />
             Crear Partido
           </Button>
+
+          {/* --- BOTÓN MODIFICADO --- */}
           <Button
             variant="outline"
-            className="h-16 flex-col gap-2 border-[#00a884] text-[#00a884] hover:bg-[#00a884] hover:text-white"
-            onClick={() => onNavigate('available-matches')}
+            className="h-16 flex-col gap-2 border-[#93c5fd] text-[#93c5fd] hover:bg-[#93c5fd] hover:text-white"
+            onClick={() => onNavigate('chat')}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            Buscar Partidos
+            <MessageCircle size={20} />
+            Chats
           </Button>
+          {/* --- FIN DEL CAMBIO --- */}
+
           <Button
             variant="outline"
             className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]"
