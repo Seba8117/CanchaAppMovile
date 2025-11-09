@@ -28,7 +28,11 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
         const courtRef = doc(db, 'cancha', courtId);
         const courtSnap = await getDoc(courtRef);
         if (courtSnap.exists()) {
-          setCourt(courtSnap.data());
+          const data = courtSnap.data();
+          setCourt(data);
+          if ((data as any)?.isActive === false) {
+            setError("Esta cancha está desactivada y no acepta reservas.");
+          }
         } else {
           setError("La cancha no fue encontrada.");
         }
@@ -42,7 +46,10 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
   }, [courtId]);
 
   useEffect(() => {
-    if (!court) return;
+    if (!court || (court as any)?.isActive === false) {
+      setAvailableSlots([]);
+      return;
+    }
 
     const calculateSlots = async () => {
       // Lógica simple de slots. En una app real, esto vendría de la disponibilidad de la cancha.
@@ -65,6 +72,10 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
   const handleConfirmBooking = async () => {
     if (!selectedTime || !court) {
       setError("Por favor, selecciona un horario.");
+      return;
+    }
+    if ((court as any)?.isActive === false) {
+      setError("Esta cancha está desactivada y no acepta reservas.");
       return;
     }
     const currentUser = auth.currentUser;
@@ -134,7 +145,7 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
 
         {error && <p className="text-red-500 text-center p-3 bg-red-100 rounded-md">{error}</p>}
 
-        <Button className="w-full h-12 text-lg" onClick={handleConfirmBooking} disabled={!selectedTime || bookingLoading}>
+        <Button className="w-full h-12 text-lg" onClick={handleConfirmBooking} disabled={!selectedTime || bookingLoading || (court as any)?.isActive === false}>
           {bookingLoading ? <Loader2 className="animate-spin" /> : `Confirmar Reserva por $${court?.pricePerHour.toLocaleString()}`}
         </Button>
       </div>

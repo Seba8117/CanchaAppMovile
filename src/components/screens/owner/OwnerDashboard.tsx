@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 // 1. AÑADIDO 'MessageSquare'
 import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare } from 'lucide-react';
 import { Button } from '../../ui/button';
@@ -8,6 +8,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../../ui/dropdown-menu';
 import { AppHeader } from '../../common/AppHeader';
 import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
+// Firebase
+import { auth, db } from '../../../Firebase/firebaseConfig';
+  import {
+    collection,
+    query,
+    where,
+    getDocs,
+    orderBy,
+    limit,
+    Timestamp,
+    onSnapshot,
+  } from 'firebase/firestore';
 
 interface OwnerDashboardProps {
   onNavigate: (screen: string, data?: any) => void;
@@ -17,14 +29,168 @@ interface OwnerDashboardProps {
 export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Mock data para el dashboard
-  const stats = {
-    totalCourts: 5,
-    totalBookings: 142,
-    monthlyRevenue: 850000,
-    activeTournaments: 3,
-    averageRating: 4.7
-  };
+  const [stats, setStats] = useState({
+    totalCourts: 0,
+    totalBookings: 0,
+    monthlyRevenue: 0,
+    revenueDeltaPct: 0,
+    activeTournaments: 0,
+    averageRating: 0,
+  });
+
+  const [recentBookings, setRecentBookings] = useState<Array<{
+    id: string;
+    courtName: string;
+    playerName: string;
+    date: string;
+    time: string;
+    amount: number;
+    status: string;
+  }>>([]);
+
+  const [tournaments, setTournaments] = useState<Array<{
+    id: string;
+    name: string;
+    sport: string;
+    participants?: number;
+    startDate: string;
+    prize: number;
+    status: string;
+  }>>([]);
+
+  // Helpers de rango de fechas del mes actual y anterior
+  const monthRanges = useMemo(() => {
+    const now = new Date();
+    const currentStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    return { currentStart, currentEnd, prevStart, prevEnd };
+  }, []);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      try {
+        // 1) Canchas activas del dueño
+        const courtsQ = query(
+          collection(db, 'cancha'),
+          where('ownerId', '==', currentUser.uid),
+          where('isActive', '==', true)
+        );
+        const courtsSnap = await getDocs(courtsQ);
+        const totalCourts = courtsSnap.size; // usamos este número como "Canchas Activas"
+
+        // 2) Reservas del mes (counts + revenue)
+        const bookingsRef = collection(db, 'bookings');
+        const currentBookingsQ = query(
+          bookingsRef,
+          where('ownerId', '==', currentUser.uid),
+          where('date', '>=', Timestamp.fromDate(monthRanges.currentStart)),
+          where('date', '<=', Timestamp.fromDate(monthRanges.currentEnd))
+        );
+        const currentBookingsSnap = await getDocs(currentBookingsQ);
+        const currentBookings = currentBookingsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const totalBookings = currentBookings.length;
+        const monthlyRevenue = currentBookings.reduce((sum, b: any) => sum + (Number(b.price) || 0), 0);
+
+        // 3) Ingresos del mes anterior para variación
+        const prevBookingsQ = query(
+          bookingsRef,
+          where('ownerId', '==', currentUser.uid),
+          where('date', '>=', Timestamp.fromDate(monthRanges.prevStart)),
+          where('date', '<=', Timestamp.fromDate(monthRanges.prevEnd))
+        );
+        const prevBookingsSnap = await getDocs(prevBookingsQ);
+        const prevRevenue = prevBookingsSnap.docs
+          .map(d => d.data())
+          .reduce((sum, b: any) => sum + (Number(b.price) || 0), 0);
+        const revenueDeltaPct = prevRevenue > 0
+          ? Math.round(((monthlyRevenue - prevRevenue) / prevRevenue) * 100)
+          : 100; // Si el mes anterior fue 0, mostramos +100% por simplicidad
+
+        // 4) Torneos del dueño
+        const tournamentsQ = query(collection(db, 'torneo'), where('ownerId', '==', currentUser.uid));
+        const tournamentsSnap = await getDocs(tournamentsQ);
+        const tournamentsData = tournamentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const activeTournaments = tournamentsData.filter((t: any) => t.status !== 'finalizado').length;
+
+        // 5) Actividad reciente: últimas 5 reservas
+        const recentQ = query(
+          bookingsRef,
+          where('ownerId', '==', currentUser.uid)
+        );
+        const recentSnap = await getDocs(recentQ);
+        const recentAllRaw = recentSnap.docs.map(doc => ({ id: doc.id, data: doc.data() as any }));
+        const recent = recentAllRaw
+          .sort((a, b) => {
+            const at = (a.data.date as Timestamp).toMillis?.() ?? (a.data.date?.toDate?.() as Date)?.getTime?.() ?? 0;
+            const bt = (b.data.date as Timestamp).toMillis?.() ?? (b.data.date?.toDate?.() as Date)?.getTime?.() ?? 0;
+            return bt - at;
+          })
+          .slice(0, 5)
+          .map(({ id, data }) => {
+            const dt = (data.date as Timestamp).toDate();
+            const dateStr = dt.toLocaleDateString();
+            return {
+              id,
+              courtName: data.courtName || 'Cancha',
+              playerName: data.playerName || 'Jugador',
+              date: dateStr,
+              time: `${data.startTime ?? ''}${data.endTime ? ` - ${data.endTime}` : ''}`,
+              amount: Number(data.price) || 0,
+              status: data.status || 'confirmed',
+            };
+          });
+
+        // 6) Mapear torneos para la UI
+        const mappedTournaments = tournamentsData.map((t: any) => {
+          const start: string = t.startDate ? new Date(t.startDate).toLocaleDateString() : '-';
+          return {
+            id: t.id,
+            name: t.name || 'Torneo',
+            sport: t.sport || 'futbol',
+            participants: t.registeredTeams ?? 0,
+            startDate: start,
+            prize: Number(t.entryFee || 0) * Number(t.maxTeams || 0), // aproximación de premio si no hay campo
+            status: t.status || 'registration',
+          };
+        });
+
+        setStats(s => ({
+          ...s,
+          totalCourts,
+          totalBookings,
+          monthlyRevenue,
+          revenueDeltaPct,
+          activeTournaments,
+        }));
+        setRecentBookings(recent);
+        setTournaments(mappedTournaments);
+      } catch (e) {
+        console.error('Error cargando dashboard del dueño:', e);
+      }
+    };
+
+    fetchData();
+  }, [monthRanges]);
+
+  // Suscripción en tiempo real al conteo de canchas activas del dueño
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const q = query(
+      collection(db, 'cancha'),
+      where('ownerId', '==', currentUser.uid),
+      where('isActive', '==', true)
+    );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setStats((s) => ({ ...s, totalCourts: snap.size }));
+    });
+    return () => unsubscribe();
+  }, []);
 
   const courts = [
     {
@@ -62,56 +228,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     }
   ];
 
-  const recentBookings = [
-    {
-      id: 1,
-      courtName: 'Cancha Principal',
-      playerName: 'Carlos Mendoza',
-      date: 'Hoy',
-      time: '18:00 - 20:00',
-      amount: 50000,
-      status: 'confirmed'
-    },
-    {
-      id: 2,
-      courtName: 'Cancha Básquetball',
-      playerName: 'Ana García',
-      date: 'Mañana',
-      time: '16:00 - 17:30',
-      amount: 30000,
-      status: 'pending'
-    },
-    {
-      id: 3,
-      courtName: 'Cancha Principal',
-      playerName: 'Los Tigres FC',
-      date: '15 Sep',
-      time: '20:00 - 22:00',
-      amount: 50000,
-      status: 'completed'
-    }
-  ];
+  // recentBookings ahora viene de Firestore
 
-  const tournaments = [
-    {
-      id: 1,
-      name: 'Copa Primavera Fútbol',
-      sport: 'Fútbol',
-      participants: 16,
-      startDate: '20 Sep',
-      prize: 500000,
-      status: 'active'
-    },
-    {
-      id: 2,
-      name: 'Torneo Básquetball Amateur',
-      sport: 'Básquetball',
-      participants: 8,
-      startDate: '25 Sep',
-      prize: 300000,
-      status: 'registration'
-    }
-  ];
+  // tournaments ahora viene de Firestore
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -262,12 +381,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                       <TrendingUp size={26} className="text-white" />
                     </div>
                     <div>
-                      <p className="font-['Outfit'] font-black text-4xl text-white leading-none">${(stats.monthlyRevenue / 1000).toFixed(0)}k</p>
+                    <p className="font-['Outfit'] font-black text-4xl text-white leading-none">${(stats.monthlyRevenue / 1000).toFixed(0)}k</p>
                       <p className="font-['Outfit'] font-semibold text-sm text-orange-100 mt-1">💰 Ingresos Mensuales</p>
                     </div>
                   </div>
                   <div className="text-right text-white/80">
-                    <p className="font-['Outfit'] font-medium text-xs">+12% vs mes anterior</p>
+                    <p className="font-['Outfit'] font-medium text-xs">{stats.revenueDeltaPct >= 0 ? `+${stats.revenueDeltaPct}%` : `${stats.revenueDeltaPct}%`} vs mes anterior</p>
                   </div>
                 </div>
               </div>

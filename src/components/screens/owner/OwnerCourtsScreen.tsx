@@ -14,8 +14,10 @@ import {
   onSnapshot, 
   QueryDocumentSnapshot, 
   DocumentData,
-  doc, // <-- Importado para borrar
-  deleteDoc // <-- Importado para borrar
+  doc, // <-- Importado para borrar/actualizar
+  deleteDoc, // <-- Importado para borrar
+  updateDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 // --- FIN: Importaciones de Firebase ---
 
@@ -137,6 +139,18 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
   };
   // --- FIN NUEVAS FUNCIONES ---
 
+  // Activar/Desactivar cancha
+  const handleToggleActive = async (e: React.MouseEvent, court: Court) => {
+    e.stopPropagation();
+    try {
+      const ref = doc(db, 'cancha', court.id);
+      await updateDoc(ref, { isActive: !court.isActive, updatedAt: serverTimestamp() });
+    } catch (err) {
+      console.error('Error al actualizar estado de la cancha: ', err);
+      setError('No se pudo cambiar el estado de la cancha.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#f4b400] to-[#e6a200] p-4 text-[#172c44]">
@@ -231,6 +245,9 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
                         <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
                           <DropdownMenuItem onClick={(e) => handleEditClick(e, court)}>
                             <Edit size={14} className="mr-2" /> Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => handleToggleActive(e, court)}>
+                            <Settings size={14} className="mr-2" /> {court.isActive ? 'Desactivar' : 'Activar'}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => handleDeleteClick(e, court)} className="text-red-600">
                             <Trash2 size={14} className="mr-2" /> Eliminar

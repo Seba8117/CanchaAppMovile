@@ -65,7 +65,8 @@ export const createMatch = async (matchData: MatchData) => {
 export const getAllCourts = async (): Promise<DocumentData[]> => {
   try {
     const courtsRef = collection(db, 'cancha');
-    const querySnapshot = await getDocs(courtsRef);
+    const q = query(courtsRef, where('isActive', '==', true));
+    const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
     console.error("Error al obtener las canchas: ", error);

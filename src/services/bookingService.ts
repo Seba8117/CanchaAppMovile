@@ -7,6 +7,8 @@ import {
   getDocs,
   Timestamp,
   serverTimestamp,
+  doc,
+  getDoc,
 } from 'firebase/firestore';
 
 interface BookingData {
@@ -29,6 +31,17 @@ interface BookingData {
  */
 export const createBooking = async (bookingData: BookingData) => {
   try {
+    // Validar que la cancha exista y esté activa
+    const courtRef = doc(db, 'cancha', bookingData.courtId);
+    const courtSnap = await getDoc(courtRef);
+    if (!courtSnap.exists()) {
+      throw new Error("La cancha no existe.");
+    }
+    const courtData = courtSnap.data() as any;
+    if (courtData?.isActive === false) {
+      throw new Error("Esta cancha está desactivada y no acepta reservas.");
+    }
+
     const bookingWithTimestamp = {
       ...bookingData,
       date: Timestamp.fromDate(bookingData.date),

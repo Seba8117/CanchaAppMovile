@@ -32,14 +32,15 @@ export function SearchCourtsScreen({ onNavigate, onBack }: SearchCourtsScreenPro
     setError(null);
     try {
       const courtsRef = collection(db, 'cancha');
-      // Búsqueda simple por deporte. Se puede hacer más compleja.
-      const q = query(courtsRef, where('sports', 'array-contains', searchTerm.toLowerCase()));
+      // Para evitar índices compuestos, consultamos solo canchas activas y filtramos por deporte en cliente.
+      const q = query(courtsRef, where('isActive', '==', true));
       const querySnapshot = await getDocs(q);
-      const results = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Court[];
-      setCourts(results);
+      const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Court[];
+      const term = searchTerm.trim().toLowerCase();
+      const filtered = term
+        ? results.filter(c => (c.sports || []).map(s => s.toLowerCase()).includes(term))
+        : results;
+      setCourts(filtered);
     } catch (err) {
       console.error("Error buscando canchas:", err);
       setError("No se pudieron buscar las canchas.");
@@ -54,11 +55,10 @@ export function SearchCourtsScreen({ onNavigate, onBack }: SearchCourtsScreenPro
       setLoading(true);
       try {
         const courtsRef = collection(db, 'cancha');
-        const querySnapshot = await getDocs(courtsRef); // Debería tener un limit() en una app real
-        const results = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Court[];
+        // Mostrar solo canchas activas en la carga inicial
+        const q = query(courtsRef, where('isActive', '==', true));
+        const querySnapshot = await getDocs(q); // Debería tener un limit() en una app real
+        const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Court[];
         setCourts(results);
       } catch (err) {
         setError("No se pudieron cargar las canchas iniciales.");

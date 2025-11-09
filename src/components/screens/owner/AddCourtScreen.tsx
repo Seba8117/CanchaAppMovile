@@ -29,6 +29,7 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
     pricePerHour: '',
     description: '',
     amenities: [] as string[],
+    isActive: true,
     availability: {
       monday: { start: '08:00', end: '22:00', enabled: true },
       tuesday: { start: '08:00', end: '22:00', enabled: true },
@@ -168,6 +169,10 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Checkbox id="isActive" checked={formData.isActive} onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: !!checked }))} />
+              <Label htmlFor="isActive" className="text-[#172c44]">Cancha activa</Label>
+            </div>
             <div>
               <Label htmlFor="name" className="text-[#172c44]">Nombre de la Cancha *</Label>
               <Input
