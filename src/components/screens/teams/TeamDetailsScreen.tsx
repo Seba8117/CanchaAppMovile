@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Users, User, Mail, Phone, Calendar, Trophy, Star, MoreVertical, Settings, Trash2, Loader2, Shield } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, Users, User, Mail, Phone, Calendar, Trophy, Star, MoreVertical, Settings, Trash2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -7,9 +7,6 @@ import { Avatar, AvatarFallback } from '../../ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../ui/dropdown-menu';
 import { AppHeader } from '../../common/AppHeader';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../../Firebase/firebaseConfig';
-import { auth } from '../../../Firebase/firebaseConfig';
 
 interface TeamDetailsScreenProps {
   onBack: () => void;
@@ -18,51 +15,169 @@ interface TeamDetailsScreenProps {
 }
 
 export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsScreenProps) {
-  const [players, setPlayers] = useState<any[]>([]);
-  const [loadingPlayers, setLoadingPlayers] = useState(true);
+  // Mock current user data - in real app this would come from auth context
+  const currentUserId = 1; // Assuming user is the captain for demo
   
-  // Usar useMemo para normalizar los datos solo cuando teamData cambia
-  const team = useMemo(() => {
-    if (!teamData) return null;
-    return {
-      ...teamData,
-      captain: teamData.captain || { id: teamData.captainId, name: teamData.captainName },
-      stats: teamData.stats || { matchesPlayed: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, trophies: 0 },
-      members: teamData.members || [],
-    };
-  }, [teamData]);
+  // Normalizar los datos del equipo para manejar tanto datos de Firebase como datos mock
+  const normalizeTeamData = (data: any) => {
+    if (!data) {
+      // Datos de ejemplo del equipo (fallback)
+      return {
+        id: 1,
+        name: 'Los Tigres FC',
+        sport: 'Fútbol',
+        captain: {
+          id: 1,
+          name: 'Juan Pérez',
+          email: 'juan@tigresfc.com',
+          phone: '+56 9 8765 4321',
+          position: 'Mediocampista'
+        },
+        founded: '2020',
+        colors: 'Amarillo y Negro',
+        homeGround: 'Estadio Municipal',
+        description: 'Equipo amateur de fútbol con participación en ligas locales desde 2020. Enfoque en juego ofensivo y desarrollo de talentos jóvenes.',
+        stats: {
+          matchesPlayed: 45,
+          wins: 28,
+          draws: 10,
+          losses: 7,
+          goalsFor: 85,
+          goalsAgainst: 32,
+          trophies: 3
+        },
+        players: [],
+        type: 'official'
+      };
+    }
 
-  useEffect(() => {
-    const fetchPlayers = async () => {
-      if (!team || !team.members || team.members.length === 0) {
-        setLoadingPlayers(false);
-        return;
-      }
-      setLoadingPlayers(true);
-      try {
-        const playerPromises = team.members.map(async (memberId: string) => {
-          const playerDocRef = doc(db, 'jugador', memberId);
-          const playerDocSnap = await getDoc(playerDocRef);
-          if (playerDocSnap.exists()) {
-            return { 
-              id: memberId, 
-              ...playerDocSnap.data(),
-              isCaptain: memberId === team.captainId,
-            };
-          }
-          return { id: memberId, name: 'Jugador Desconocido', isCaptain: memberId === team.captainId };
-        });
-        const fetchedPlayers = await Promise.all(playerPromises);
-        setPlayers(fetchedPlayers);
-      } catch (error) {
-        console.error("Error fetching team players:", error);
-      } finally {
-        setLoadingPlayers(false);
-      }
-    };
+    // Si los datos vienen de Firebase, normalizar la estructura
+    if (data.captainId && data.captainName && !data.captain) {
+      return {
+        ...data,
+        captain: {
+          id: data.captainId,
+          name: data.captainName,
+          email: data.captainEmail || data.captainName,
+          phone: '+56 9 0000 0000',
+          position: 'Capitán'
+        },
+        founded: data.createdAt ? new Date(data.createdAt.seconds * 1000).getFullYear().toString() : '2024',
+        colors: 'Amarillo y Negro',
+        homeGround: 'Por definir',
+        stats: {
+          matchesPlayed: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+          trophies: 0
+        },
+    players: data.members ? [] : [ // Si hay miembros reales, usar array vacío por ahora
+           {
+             id: 1,
+             name: data.captainName || 'Capitán',
+             position: 'Capitán',
+             number: 1,
+             age: 25,
+             isCaptain: true,
+             rating: 4.5,
+             matchesPlayed: 0,
+             goals: 0,
+             assists: 0
+           }
+         ],
+         type: 'official'
+       };
+     }
 
-    fetchPlayers();
-  }, [team]);
+     // Si ya tiene la estructura correcta, devolverla tal como está
+     return data;
+   };
+
+   const team = normalizeTeamData(teamData);
+
+  // Datos adicionales de jugadores para el equipo mock (solo si no hay datos reales)
+  const mockPlayers = [
+    {
+      id: 1,
+      name: 'Juan Pérez',
+      position: 'Mediocampista',
+      number: 10,
+      age: 28,
+      isCaptain: true,
+      rating: 4.8,
+      matchesPlayed: 42,
+      goals: 15,
+      assists: 8
+    },
+    {
+      id: 2,
+      name: 'Carlos Rodríguez',
+      position: 'Portero',
+      number: 1,
+      age: 32,
+      isCaptain: false,
+      rating: 4.7,
+      matchesPlayed: 45,
+      goals: 0,
+      assists: 2
+    },
+     {
+       id: 3,
+       name: 'Miguel Silva',
+       position: 'Defensor',
+       number: 4,
+       age: 26,
+       isCaptain: false,
+       rating: 4.5,
+       matchesPlayed: 38,
+       goals: 3,
+       assists: 5
+     },
+      {
+        id: 4,
+        name: 'Luis Torres',
+        position: 'Delantero',
+        number: 9,
+        age: 24,
+        isCaptain: false,
+        rating: 4.6,
+        matchesPlayed: 40,
+        goals: 22,
+        assists: 6
+      },
+      {
+        id: 5,
+        name: 'Diego Morales',
+        position: 'Mediocampista',
+        number: 8,
+        age: 27,
+        isCaptain: false,
+        rating: 4.4,
+        matchesPlayed: 35,
+        goals: 8,
+        assists: 12
+      },
+      {
+        id: 6,
+        name: 'Pedro Herrera',
+        position: 'Defensor',
+        number: 3,
+        age: 29,
+        isCaptain: false,
+        rating: 4.3,
+        matchesPlayed: 41,
+        goals: 2,
+        assists: 4
+      }
+    ];
+
+  // Usar los jugadores mock solo si el equipo no tiene jugadores reales
+  if (team.players.length === 0 || (team.players.length === 1 && team.players[0].name === team.captainName)) {
+    team.players = mockPlayers;
+  }
 
   // Datos de partidos recientes mock
   const recentMatches = [
@@ -73,18 +188,28 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
       date: '2024-02-28',
       competition: 'Liga Local'
     },
+    {
+      id: 2,
+      opponent: 'Leones de Oro',
+      result: 'Empate 2-2',
+      date: '2024-02-25',
+      competition: 'Liga Local'
+    },
+    {
+      id: 3,
+      opponent: 'Dragones FC',
+      result: 'Victoria 4-0',
+      date: '2024-02-22',
+      competition: 'Copa Regional'
+    }
   ];
 
-  // VERIFICACIÓN INICIAL: Si no hay datos del equipo, no se puede renderizar nada.
-  if (!team) {
-    return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin" /></div>;
+  // Agregar partidos recientes si no existen
+  if (!team.recentMatches) {
+    team.recentMatches = recentMatches;
   }
 
-  if (!team) {
-    return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin" /></div>;
-  }
-
-  const isCaptain = auth.currentUser?.uid === team.captainId;
+  const isCaptain = currentUserId === team.captain.id || currentUserId === 1; // User is captain
   const isOfficialTeam = team.type === 'official' || !team.type; // Assume official if not specified
 
   const handleDeleteTeam = () => {
@@ -92,7 +217,7 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
       onNavigate('delete-team', {
         ...team,
         captain: { ...team.captain, id: 1 }, // Add ID for captain
-        members: players.map((player: any) => ({
+        members: team.players.map((player: any) => ({
           id: player.id,
           name: player.name,
           role: player.isCaptain ? 'captain' : 'member',
@@ -128,15 +253,18 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884]">
+    <div className="min-h-screen bg-gray-50">
       <AppHeader 
         title="Detalles del Equipo" 
-        showBackButton={true} 
-        onBack={onBack}
+        leftContent={
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft size={20} />
+          </Button>
+        }
         rightContent={
           isCaptain && isOfficialTeam && (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild className="text-white">
+              <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon">
                   <MoreVertical size={20} />
                 </Button>
@@ -161,7 +289,7 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
 
       <div className="p-4 pb-20 space-y-6">
         {/* Header del Equipo */}
-        <Card className="bg-white/90 backdrop-blur-sm">
+        <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-4 mb-4">
               <Avatar className="w-16 h-16">
@@ -172,13 +300,13 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
               <div className="flex-1">
                 <h1 className="text-2xl font-bold text-[#172c44]">{team.name}</h1>
                 <div className="flex items-center gap-2 mt-1">
-                  <Badge className="bg-[#00a884] text-white">{team.sport.charAt(0).toUpperCase() + team.sport.slice(1)}</Badge>
+                  <Badge className="bg-[#00a884] text-white">{team.sport}</Badge>
                   <span className="text-gray-600">•</span>
                   <span className="text-gray-600">Fundado en {team.founded}</span>
                   {isOfficialTeam && (
                     <>
                       <span className="text-gray-600">•</span>
-                      <Badge className="bg-[#f4b400] text-[#172c44] text-xs font-bold">Oficial</Badge>
+                      <Badge className="bg-[#f4b400] text-[#172c44] text-xs">Oficial</Badge>
                     </>
                   )}
                 </div>
@@ -216,45 +344,45 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
 
         {/* Tabs de Información */}
         <Tabs defaultValue="players" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3 bg-black/20 backdrop-blur-sm p-1 rounded-lg">
-            <TabsTrigger value="players" className="text-white/70 data-[state=active]:bg-[#f4b400] data-[state=active]:text-[#172c44] data-[state=active]:shadow-md rounded-md font-semibold transition-all duration-200">Jugadores</TabsTrigger>
-            <TabsTrigger value="stats" className="text-white/70 data-[state=active]:bg-[#f4b400] data-[state=active]:text-[#172c44] data-[state=active]:shadow-md rounded-md font-semibold transition-all duration-200">Estadísticas</TabsTrigger>
-            <TabsTrigger value="history" className="text-white/70 data-[state=active]:bg-[#f4b400] data-[state=active]:text-[#172c44] data-[state=active]:shadow-md rounded-md font-semibold transition-all duration-200">Historial</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="players">Jugadores</TabsTrigger>
+            <TabsTrigger value="stats">Estadísticas</TabsTrigger>
+            <TabsTrigger value="history">Historial</TabsTrigger>
           </TabsList>
 
           {/* Tab Jugadores */}
           <TabsContent value="players" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-white text-xl">Plantilla</h2>
-              <Badge className="bg-[#00a884] text-white">{players.length} jugadores</Badge>
+              <h2 className="text-[#172c44] text-xl">Plantilla</h2>
+              <Badge className="bg-[#00a884] text-white">
+                {team.players.length} jugadores
+              </Badge>
             </div>
 
-            {loadingPlayers ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-gray-500" /></div> :
-            players.map((player: any) => (
+            {team.players.map((player: any) => (
               <Card key={player.id}>
                 <CardContent className="p-4">
-                  <div className="flex items-center gap-4 mb-3">
+                  <div className="flex items-center gap-3 mb-3">
                     <div className="w-12 h-12 bg-[#172c44] text-white rounded-full flex items-center justify-center font-bold">
                       {player.number}
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-[#172c44] font-medium">{player.name}</h3>
-                        {player.id === team.captainId && (
-                          <Badge className="bg-[#f4b400] text-[#172c44] text-xs flex items-center gap-1">
-                            <Shield size={12} /> Capitán
-                          </Badge>
+                        {player.isCaptain && (
+                          <Badge className="bg-[#f4b400] text-[#172c44] text-xs">Capitán</Badge>
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         {getPositionBadge(player.position)}
-                        {player.age && <><span className="text-gray-600">•</span><span className="text-sm text-gray-600">{player.age} años</span></>}
+                        <span className="text-gray-600">•</span>
+                        <span className="text-sm text-gray-600">{player.age} años</span>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="flex items-center gap-1 mb-1">
                         <Star className="text-[#f4b400]" size={14} fill="currentColor" />
-                        <span className="text-sm font-medium">{player.rating || 'N/A'}</span>
+                        <span className="text-sm font-medium">{player.rating}</span>
                       </div>
                       <p className="text-xs text-gray-600">{player.matchesPlayed} partidos</p>
                     </div>
@@ -281,7 +409,7 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
 
           {/* Tab Estadísticas */}
           <TabsContent value="stats" className="space-y-4">
-            <Card className="bg-white/90 backdrop-blur-sm">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-[#172c44]">Rendimiento General</CardTitle>
               </CardHeader>
@@ -336,11 +464,11 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
 
           {/* Tab Historial */}
           <TabsContent value="history" className="space-y-4">
-            <div className="flex justify-between items-center mb-2">
+            <div className="flex justify-between items-center">
               <h2 className="text-[#172c44] text-xl">Partidos Recientes</h2>
             </div>
 
-            {recentMatches.map((match: any) => (
+            {team.recentMatches.map((match: any) => (
               <Card key={match.id}>
                 <CardContent className="p-4">
                   <div className="flex justify-between items-start mb-2">

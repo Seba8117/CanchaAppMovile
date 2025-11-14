@@ -46,7 +46,7 @@ export function OwnerProfile({ onNavigate, onLogout }: OwnerProfileProps) {
         }
 
         // 2. Obtener el número de canchas que le pertenecen
-        const courtsQuery = query(collection(db, 'courts'), where('ownerId', '==', currentUser.uid));
+        const courtsQuery = query(collection(db, 'cancha'), where('ownerId', '==', currentUser.uid));
         const courtsSnapshot = await getCountFromServer(courtsQuery);
         const courtCount = courtsSnapshot.data().count;
         
