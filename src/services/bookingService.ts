@@ -32,7 +32,7 @@ interface BookingData {
 export const createBooking = async (bookingData: BookingData) => {
   try {
     // Validar que la cancha exista y esté activa
-    const courtRef = doc(db, 'cancha', bookingData.courtId);
+    const courtRef = doc(db, 'courts', bookingData.courtId);
     const courtSnap = await getDoc(courtRef);
     if (!courtSnap.exists()) {
       throw new Error("La cancha no existe.");

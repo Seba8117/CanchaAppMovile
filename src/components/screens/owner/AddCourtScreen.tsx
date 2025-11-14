@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
+import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig'; // Asegúrate de que esta ruta sea correcta
@@ -130,18 +131,21 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
         pricePerHour: Number(formData.pricePerHour), // Convertir a tipo número
         capacity: Number(formData.capacity) || 0, // Convertir a número o establecer 0 si está vacío
         ownerId: currentUser.uid, // ¡Asocia la cancha al dueño!
-        createdAt: serverTimestamp() // Agrega una marca de tiempo de cuándo fue creada
+        createdAt: serverTimestamp(), // Agrega una marca de tiempo de cuándo fue creada
+        updatedAt: serverTimestamp() // Agrega una marca de tiempo de la última actualización
       };
 
       // 4. Guardar el nuevo documento en la colección 'cancha'
-      const docRef = await addDoc(collection(db, 'cancha'), courtData);
+      const docRef = await addDoc(collection(db, 'courts'), courtData);
       console.log('Cancha creada con ID: ', docRef.id);
       
-      alert('¡Cancha creada exitosamente!');
+      toast.success('¡Cancha creada exitosamente!', {
+        description: `La cancha "${formData.name}" ya está disponible para ser reservada.`,
+      });
       onBack(); // Regresar a la pantalla anterior después de crear
 
     } catch (err) {
-      console.error("Error al crear la cancha: ", err);
+      toast.error('Error al crear la cancha', { description: 'No se pudo guardar la cancha. Inténtalo de nuevo.' });
       setError("No se pudo crear la cancha. Inténtalo de nuevo más tarde.");
     } finally {
       setLoading(false);

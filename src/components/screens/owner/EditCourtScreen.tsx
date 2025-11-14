@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
+import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
@@ -158,24 +159,25 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
 
     try {
       // 1. Referencia al documento existente usando el ID de courtData
-      const courtRef = doc(db, 'cancha', courtData.id);
+      const courtRef = doc(db, 'courts', courtData.id);
 
       // 2. Preparar los datos actualizados
       const dataToUpdate = {
         ...formData,
         pricePerHour: Number(formData.pricePerHour),
-        capacity: Number(formData.capacity) || 0,
+        capacity: Number(formData.capacity) || 0, // Asegurarse de que la capacidad sea un número
         updatedAt: serverTimestamp() // Añadir fecha de actualización
       };
 
       // 3. Usar updateDoc para actualizar el documento
       await updateDoc(courtRef, dataToUpdate);
       
-      alert('¡Cancha actualizada exitosamente!'); // Puedes usar un toast
+      toast.success('¡Cancha actualizada exitosamente!');
       onBack(); // Regresar a la lista de canchas
 
     } catch (err) {
       console.error("Error al actualizar la cancha: ", err);
+      toast.error('Error al guardar', { description: 'No se pudieron guardar los cambios.' });
       setError("No se pudo guardar la cancha. Inténtalo de nuevo.");
     } finally {
       setSaving(false);
@@ -185,8 +187,10 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
   // --- LÓGICA DE ELIMINAR (BONUS) ---
   const handleConfirmDelete = async () => {
     try {
-      await deleteDoc(doc(db, "cancha", courtData.id));
-      alert('Cancha eliminada.');
+      await deleteDoc(doc(db, "courts", courtData.id)); 
+      toast.success('Cancha eliminada', {
+        description: `La cancha "${formData.name}" ha sido eliminada permanentemente.`,
+      });
       onBack(); // Regresar (la pantalla anterior se actualizará sola)
     } catch (err) {
       console.error("Error al eliminar la cancha: ", err);

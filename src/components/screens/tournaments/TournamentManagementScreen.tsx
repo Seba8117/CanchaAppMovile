@@ -6,6 +6,7 @@ import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
 import { AppHeader } from '../../common/AppHeader';
+import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../../ui/alert-dialog';
 
 interface TournamentManagementScreenProps {
@@ -110,10 +111,10 @@ export function TournamentManagementScreen({ onBack, onNavigate, tournament }: T
   const handleTeamAction = (teamId: number, action: 'approve' | 'reject' | 'view') => {
     switch (action) {
       case 'approve':
-        alert(`Equipo ${teamId} aprobado`);
+        toast.success(`Equipo ${teamId} aprobado`);
         break;
       case 'reject':
-        alert(`Equipo ${teamId} rechazado`);
+        toast.warning(`Equipo ${teamId} rechazado`);
         break;
       case 'view':
         // Navegar a detalles del equipo
@@ -123,7 +124,7 @@ export function TournamentManagementScreen({ onBack, onNavigate, tournament }: T
   };
 
   const handleDeleteTournament = () => {
-    alert('Torneo eliminado exitosamente');
+    toast.success('Torneo eliminado exitosamente');
     onBack();
   };
 

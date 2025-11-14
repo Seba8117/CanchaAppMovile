@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
+import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
@@ -54,7 +55,7 @@ export function CreateTournamentScreen({ onBack, onNavigate }: CreateTournamentS
         return;
       }
       try {
-        const q = query(collection(db, "cancha"), where("ownerId", "==", currentUser.uid));
+        const q = query(collection(db, "courts"), where("isActive", "==", true));
         const querySnapshot = await getDocs(q);
         const courtsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
@@ -135,12 +136,15 @@ export function CreateTournamentScreen({ onBack, onNavigate }: CreateTournamentS
       const docRef = await addDoc(collection(db, 'torneo'), tournamentData);
       console.log('Torneo creado con ID: ', docRef.id);
       
-      alert('¡Torneo creado exitosamente!');
+      toast.success('¡Torneo creado exitosamente!', {
+        description: `El torneo "${formData.name}" ha sido publicado.`,
+      });
       onNavigate('tournament-management', { id: docRef.id, ...tournamentData });
 
     } catch (err) {
       console.error("Error al crear el torneo: ", err);
       setError("No se pudo crear el torneo. Inténtalo de nuevo.");
+      toast.error('Error al crear el torneo', { description: 'No se pudo guardar el torneo.' });
     } finally {
       setLoading(false);
     }

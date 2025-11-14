@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 // 1. AÑADIDO 'MessageSquare'
-import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare } from 'lucide-react';
+import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare, Star } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -37,6 +37,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     activeTournaments: 0,
     averageRating: 0,
   });
+  const [bookingsToday, setBookingsToday] = useState(0);
 
   const [recentBookings, setRecentBookings] = useState<Array<{
     id: string;
@@ -47,6 +48,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     amount: number;
     status: string;
   }>>([]);
+
+  // Nuevos estados para las estadísticas de torneos
+  const [completedTournaments, setCompletedTournaments] = useState(0);
+  const [totalTournamentTeams, setTotalTournamentTeams] = useState(0);
+
+  const [ownerCourts, setOwnerCourts] = useState<any[]>([]); // Estado para las canchas del dueño
 
   const [tournaments, setTournaments] = useState<Array<{
     id: string;
@@ -76,12 +83,17 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
       try {
         // 1) Canchas activas del dueño
         const courtsQ = query(
-          collection(db, 'cancha'),
+          collection(db, 'courts'), 
           where('ownerId', '==', currentUser.uid),
           where('isActive', '==', true)
         );
         const courtsSnap = await getDocs(courtsQ);
         const totalCourts = courtsSnap.size; // usamos este número como "Canchas Activas"
+        
+        // Calcular rating promedio
+        const allCourtsData = courtsSnap.docs.map(d => d.data() as any);
+        const ratedCourts = allCourtsData.filter(c => typeof c.rating === 'number' && c.rating > 0);
+        const averageRating = ratedCourts.length > 0 ? (ratedCourts.reduce((sum, c) => sum + c.rating, 0) / ratedCourts.length) : 0;
 
         // 2) Reservas del mes (counts + revenue)
         const bookingsRef = collection(db, 'bookings');
@@ -100,8 +112,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
         const prevBookingsQ = query(
           bookingsRef,
           where('ownerId', '==', currentUser.uid),
-          where('date', '>=', Timestamp.fromDate(monthRanges.prevStart)),
-          where('date', '<=', Timestamp.fromDate(monthRanges.prevEnd))
+          where('date', '>=', Timestamp.fromDate(monthRanges.prevStart))
         );
         const prevBookingsSnap = await getDocs(prevBookingsQ);
         const prevRevenue = prevBookingsSnap.docs
@@ -112,22 +123,42 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           : 100; // Si el mes anterior fue 0, mostramos +100% por simplicidad
 
         // 4) Torneos del dueño
-        const tournamentsQ = query(collection(db, 'torneo'), where('ownerId', '==', currentUser.uid));
+        const tournamentsQ = query(
+          collection(db, 'tournaments'), // CORRECCIÓN: Usar la colección 'tournaments'
+          where('ownerId', '==', currentUser.uid)
+        );
         const tournamentsSnap = await getDocs(tournamentsQ);
         const tournamentsData = tournamentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const activeTournaments = tournamentsData.filter((t: any) => t.status !== 'finalizado').length;
+        
+        // --- CÁLCULO DE NUEVAS ESTADÍSTICAS ---
+        const completedCount = tournamentsData.filter((t: any) => t.status === 'finalizado').length;
+        const totalTeamsCount = tournamentsData.reduce((sum, t: any) => sum + (t.registeredTeams || 0), 0);
+        // --- FIN DEL CÁLCULO ---
 
+        // --- CÁLCULO DE RESERVAS DE HOY ---
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+        const todayBookings = currentBookings.filter((b: any) => {
+          const bookingDate = b.date.toDate();
+          return bookingDate >= todayStart && bookingDate <= todayEnd;
+        });
+        setBookingsToday(todayBookings.length);
         // 5) Actividad reciente: últimas 5 reservas
         const recentQ = query(
           bookingsRef,
-          where('ownerId', '==', currentUser.uid)
+          where('ownerId', '==', currentUser.uid),
+          orderBy('createdAt', 'desc'), // Ordenar por fecha de creación
+          limit(5)
         );
         const recentSnap = await getDocs(recentQ);
         const recentAllRaw = recentSnap.docs.map(doc => ({ id: doc.id, data: doc.data() as any }));
         const recent = recentAllRaw
           .sort((a, b) => {
-            const at = (a.data.date as Timestamp).toMillis?.() ?? (a.data.date?.toDate?.() as Date)?.getTime?.() ?? 0;
-            const bt = (b.data.date as Timestamp).toMillis?.() ?? (b.data.date?.toDate?.() as Date)?.getTime?.() ?? 0;
+            const at = a.data.createdAt instanceof Timestamp ? a.data.createdAt.toMillis() : 0;
+            const bt = b.data.createdAt instanceof Timestamp ? b.data.createdAt.toMillis() : 0;
             return bt - at;
           })
           .slice(0, 5)
@@ -145,9 +176,18 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             };
           });
 
+        // 7) Obtener las canchas del dueño para la pestaña "Canchas"
+        const ownerCourtsQ = query(
+          collection(db, 'courts'),
+          where('ownerId', '==', currentUser.uid),
+          orderBy('createdAt', 'desc')
+        );
+        const ownerCourtsSnap = await getDocs(ownerCourtsQ);
+        const ownerCourtsData = ownerCourtsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
         // 6) Mapear torneos para la UI
         const mappedTournaments = tournamentsData.map((t: any) => {
-          const start: string = t.startDate ? new Date(t.startDate).toLocaleDateString() : '-';
+          const start: string = t.startDate instanceof Timestamp ? t.startDate.toDate().toLocaleDateString() : '-';
           return {
             id: t.id,
             name: t.name || 'Torneo',
@@ -166,8 +206,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           monthlyRevenue,
           revenueDeltaPct,
           activeTournaments,
+          averageRating: parseFloat(averageRating.toFixed(1)),
         }));
         setRecentBookings(recent);
+        setOwnerCourts(ownerCourtsData);
+        setCompletedTournaments(completedCount); // Guardar el estado
+        setTotalTournamentTeams(totalTeamsCount); // Guardar el estado
         setTournaments(mappedTournaments);
       } catch (e) {
         console.error('Error cargando dashboard del dueño:', e);
@@ -182,7 +226,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
     const q = query(
-      collection(db, 'cancha'),
+      collection(db, 'courts'), 
       where('ownerId', '==', currentUser.uid),
       where('isActive', '==', true)
     );
@@ -191,46 +235,6 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     });
     return () => unsubscribe();
   }, []);
-
-  const courts = [
-    {
-      id: 1,
-      name: 'Cancha Principal',
-      sport: 'Fútbol',
-      surface: 'Césped sintético',
-      capacity: 22,
-      pricePerHour: 25000,
-      status: 'available',
-      bookingsToday: 6,
-      rating: 4.8
-    },
-    {
-      id: 2,
-      name: 'Cancha Básquetball',
-      sport: 'Básquetball',
-      surface: 'Madera',
-      capacity: 10,
-      pricePerHour: 20000,
-      status: 'occupied',
-      bookingsToday: 4,
-      rating: 4.6
-    },
-    {
-      id: 3,
-      name: 'Cancha Tenis Norte',
-      sport: 'Tenis',
-      surface: 'Arcilla',
-      capacity: 4,
-      pricePerHour: 15000,
-      status: 'maintenance',
-      bookingsToday: 0,
-      rating: 4.9
-    }
-  ];
-
-  // recentBookings ahora viene de Firestore
-
-  // tournaments ahora viene de Firestore
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -334,7 +338,10 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
         <div className="grid grid-cols-2 gap-4 mb-8">
           {/* Canchas Card */}
           <Card className="bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
-            <CardContent className="p-5 relative overflow-hidden">
+            <CardContent 
+              className="p-5 relative overflow-hidden cursor-pointer"
+              onClick={() => onNavigate('owner-courts')}
+            >
               <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -translate-y-8 translate-x-8"></div>
               <div className="absolute bottom-0 left-0 w-16 h-16 bg-white/5 rounded-full translate-y-6 -translate-x-6"></div>
               <div className="relative z-10">
@@ -353,7 +360,10 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
           {/* Reservas Card */}
           <Card className="bg-gradient-to-br from-emerald-500 via-green-600 to-teal-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
-            <CardContent className="p-5 relative overflow-hidden">
+            <CardContent 
+              className="p-5 relative overflow-hidden cursor-pointer" 
+              onClick={() => onNavigate('owner-bookings')} // CORRECCIÓN: Navega a la pantalla de reservas del dueño
+            >
               <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-10 translate-x-10"></div>
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-2">
@@ -371,7 +381,10 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
           {/* Ingresos Card - Wide */}
           <Card className="bg-gradient-to-br from-orange-500 via-amber-600 to-yellow-600 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2">
-            <CardContent className="p-5 relative overflow-hidden">
+            <CardContent 
+              className="p-5 relative overflow-hidden cursor-pointer" 
+              onClick={() => onNavigate('owner-financials')} // CORRECCIÓN: Navega a una pantalla de finanzas
+            >
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
               <div className="absolute bottom-0 left-1/3 w-20 h-20 bg-white/5 rounded-full translate-y-10"></div>
               <div className="relative z-10">
@@ -398,7 +411,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             className="bg-gradient-to-br from-cyan-500 via-blue-600 to-sky-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2"
             onClick={() => onNavigate('owner-chat')} // Navega a la pantalla de chat del dueño
           >
-            <CardContent className="p-5 relative overflow-hidden">
+            <CardContent className="p-5 relative overflow-hidden cursor-pointer">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
               <div className="relative z-10">
                 <div className="flex items-center justify-between">
@@ -419,7 +432,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
           {/* Torneos Card */}
           <Card className="bg-gradient-to-br from-violet-500 via-purple-600 to-fuchsia-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
-            <CardContent className="p-5 relative overflow-hidden">
+            <CardContent 
+              className="p-5 relative overflow-hidden cursor-pointer" 
+            >
               <div className="absolute top-0 left-0 w-18 h-18 bg-white/10 rounded-full -translate-y-8 -translate-x-8"></div>
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-2">
@@ -442,7 +457,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <span className="text-white text-lg">⭐</span>
+                    <Star size={22} className="text-white" />
                   </div>
                   <div className="text-right">
                     <p className="font-['Outfit'] font-black text-3xl text-white leading-none">{stats.averageRating}</p>
@@ -538,15 +553,15 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             {/* Quick Stats Row */}
             <div className="grid grid-cols-3 gap-4 mt-8">
               <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-indigo-700">85%</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-indigo-600 mt-1">Ocupación</p>
+                <p className="font-['Outfit'] font-black text-2xl text-indigo-700">{stats.totalBookings}</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-indigo-600 mt-1">Reservas del Mes</p>
               </div>
               <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-emerald-700">4.8</p>
+                <p className="font-['Outfit'] font-black text-2xl text-emerald-700">{stats.averageRating}</p>
                 <p className="font-['Outfit'] font-semibold text-xs text-emerald-600 mt-1">Rating</p>
               </div>
               <div className="bg-gradient-to-br from-orange-50 to-amber-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-amber-700">12</p>
+                <p className="font-['Outfit'] font-black text-2xl text-amber-700">{bookingsToday}</p>
                 <p className="font-['Outfit'] font-semibold text-xs text-amber-600 mt-1">Hoy</p>
               </div>
             </div>
@@ -569,11 +584,11 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
               </Button>
             </div>
 
-            <div className="space-y-4">
-              {courts.map((court, index) => (
+            <div className="space-y-4"> 
+              {ownerCourts.length > 0 ? ownerCourts.map((court, index) => (
                 <Card key={court.id} className={`bg-white/80 backdrop-blur-sm border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden ${
-                  court.sport === 'Fútbol' ? 'shadow-emerald-200/50 hover:shadow-emerald-300/60' :
-                  court.sport === 'Básquetball' ? 'shadow-orange-200/50 hover:shadow-orange-300/60' :
+                  court.sport === 'futbol' ? 'shadow-emerald-200/50 hover:shadow-emerald-300/60' :
+                  court.sport === 'basquet' ? 'shadow-orange-200/50 hover:shadow-orange-300/60' :
                   'shadow-blue-200/50 hover:shadow-blue-300/60'
                 } shadow-xl hover:shadow-2xl`}>
                   <CardContent className="p-5 relative">
@@ -582,12 +597,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                       court.sport === 'Fútbol' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
                       court.sport === 'Básquetball' ? 'bg-gradient-to-r from-orange-500 to-red-500' :
                       'bg-gradient-to-r from-blue-500 to-indigo-500'
-                    }`}></div>
+                    }`}></div> 
                     
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <div className={`w-3 h-3 rounded-full ${
+                          <div className={`w-3 h-3 rounded-full ${ // La lógica de color del punto puede necesitar ajuste
                             court.sport === 'Fútbol' ? 'bg-emerald-400' :
                             court.sport === 'Básquetball' ? 'bg-orange-400' :
                             'bg-blue-400'
@@ -597,9 +612,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                         
                         <div className="ml-6">
                           <div className="flex items-center gap-3 mb-2">
-                            <p className="font-['Outfit'] font-semibold text-base text-slate-700">
-                              {court.sport === 'Fútbol' ? '⚽' : 
-                               court.sport === 'Básquetball' ? '🏀' : '🎾'} {court.sport}
+                            <p className="font-['Outfit'] font-semibold text-base text-slate-700"> 
+                              {court.sport === 'futbol' ? '⚽' : 
+                               court.sport === 'basquet' ? '🏀' : '🎾'} {court.sport.charAt(0).toUpperCase() + court.sport.slice(1)}
                             </p>
                             <span className="text-slate-400">•</span>
                             <p className="font-['Outfit'] font-medium text-sm text-slate-600">{court.surface}</p>
@@ -611,7 +626,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                             </span>
                             <span className="flex items-center gap-1">
                               ⭐ {court.rating}/5.0
-                            </span>
+                            </span> 
                           </div>
                         </div>
                       </div>
@@ -624,8 +639,8 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                         
                         {/* Estado de la cancha */}
                         <div className="mt-2">
-                          <Badge className={`text-xs font-['Outfit'] font-semibold px-2 py-1 rounded-full ${getStatusColor(court.status)}`}>
-                            {getStatusText(court.status)}
+                          <Badge className={`text-xs font-['Outfit'] font-semibold px-2 py-1 rounded-full ${court.isActive ? 'bg-[#E8F5E9] text-[#2E7D32]' : 'bg-[#FFF3E0] text-[#E65100]'}`}>
+                            {court.isActive ? 'Activa' : 'Inactiva'}
                           </Badge>
                         </div>
                       </div>
@@ -635,14 +650,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                     <div className="mt-4 pt-3 border-t border-slate-100 space-y-3">
                       {/* Estado y reservas */}
                       <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          court.status === 'available' ? 'bg-emerald-400 animate-pulse' :
-                          court.status === 'occupied' ? 'bg-red-400 animate-pulse' :
+                        <div className={`w-2 h-2 rounded-full ${ // La lógica de color del punto puede necesitar ajuste
+                          court.isActive ? 'bg-emerald-400 animate-pulse' :
                           'bg-yellow-400 animate-pulse'
                         }`}></div>
                         <span className="font-['Outfit'] font-semibold text-sm text-slate-600">
-                          {court.status === 'available' ? 'Disponible ahora' :
-                           court.status === 'occupied' ? 'En uso' :
+                          {court.isActive ? 'Operativa' :
                            'Mantenimiento'}
                         </span>
                         <span className="text-slate-400">•</span>
@@ -671,7 +684,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+              )) : (
+                <p className="text-center text-slate-500 py-8">Revisa tus canchas</p>
+              )}
             </div>
           </TabsContent>
 
@@ -693,10 +708,10 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             </div>
 
             <div className="space-y-4">
-              {tournaments.map((tournament, index) => (
+              {tournaments.length > 0 ? tournaments.map((tournament, index) => (
                 <Card key={tournament.id} className={`bg-white/80 backdrop-blur-sm border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden ${
-                  tournament.sport === 'Fútbol' ? 'shadow-emerald-200/50 hover:shadow-emerald-300/60' :
-                  tournament.sport === 'Básquetball' ? 'shadow-orange-200/50 hover:shadow-orange-300/60' :
+                  tournament.sport === 'futbol' ? 'shadow-emerald-200/50 hover:shadow-emerald-300/60' :
+                  tournament.sport === 'basquet' ? 'shadow-orange-200/50 hover:shadow-orange-300/60' :
                   'shadow-blue-200/50 hover:shadow-blue-300/60'
                 } shadow-xl hover:shadow-2xl`}>
                   <CardContent className="p-5 relative">
@@ -711,8 +726,8 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <div className={`w-3 h-3 rounded-full ${
-                            tournament.sport === 'Fútbol' ? 'bg-emerald-400' :
-                            tournament.sport === 'Básquetball' ? 'bg-orange-400' :
+                            tournament.status === 'active' ? 'bg-emerald-400' :
+                            tournament.status === 'registration' ? 'bg-orange-400' :
                             'bg-blue-400'
                           } animate-pulse`}></div>
                           <h3 className="font-['Outfit'] font-bold text-lg text-slate-800">{tournament.name}</h3>
@@ -720,9 +735,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                         
                         <div className="ml-6">
                           <div className="flex items-center gap-3 mb-2">
-                            <p className="font-['Outfit'] font-semibold text-base text-slate-700">
-                              {tournament.sport === 'Fútbol' ? '⚽' : 
-                               tournament.sport === 'Básquetball' ? '🏀' : '🎾'} {tournament.sport}
+                            <p className="font-['Outfit'] font-semibold text-base text-slate-700"> 
+                              {tournament.sport === 'futbol' ? '⚽' : 
+                               tournament.sport === 'basquet' ? '🏀' : '🎾'} {tournament.sport.charAt(0).toUpperCase() + tournament.sport.slice(1)}
                             </p>
                             <span className="text-slate-400">•</span>
                             <p className="font-['Outfit'] font-medium text-sm text-slate-600">🏆 Torneo</p>
@@ -791,17 +806,20 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+              )) : (
+                <p className="text-center text-slate-500 py-8">No tienes torneos creados.</p>
+              )}
+
             </div>
 
             {/* Tournament Stats */}
             <div className="grid grid-cols-2 gap-4 mt-8">
               <div className="bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl p-6 text-center">
-                <p className="font-['Outfit'] font-black text-3xl text-orange-600">24</p>
+                <p className="font-['Outfit'] font-black text-3xl text-orange-600">{completedTournaments}</p>
                 <p className="font-['Outfit'] font-bold text-sm text-orange-700 mt-2">🏆 Torneos Completados</p>
               </div>
               <div className="bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl p-6 text-center">
-                <p className="font-['Outfit'] font-black text-3xl text-purple-600">156</p>
+                <p className="font-['Outfit'] font-black text-3xl text-purple-600">{totalTournamentTeams}</p>
                 <p className="font-['Outfit'] font-bold text-sm text-purple-700 mt-2">👥 Equipos Totales</p>
               </div>
             </div>

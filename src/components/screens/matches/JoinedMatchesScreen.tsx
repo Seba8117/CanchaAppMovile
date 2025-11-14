@@ -3,6 +3,18 @@ import { ArrowLeft, Calendar, Clock, MapPin, Users, Trophy, AlertCircle } from '
 import { AppHeader } from '../../common/AppHeader';
 import { getMatchesForPlayer, leaveMatch } from '../../../services/matchService';
 
+import { toast } from 'sonner';
+import { auth } from '../../../Firebase/firebaseConfig';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../ui/alert-dialog";
 interface Match {
   id: string;
   sport: string;
@@ -34,6 +46,8 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [leavingMatchId, setLeavingMatchId] = useState<string | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [matchToLeave, setMatchToLeave] = useState<{ id: string; name: string } | null>(null);
 
   // Cargar partidos del usuario
   useEffect(() => {
@@ -41,11 +55,15 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
       try {
         setIsLoading(true);
         setError(null);
-        
-        // TODO: Obtener el ID del usuario actual del contexto de autenticación
-        const userId = 'current-user-id';
+
+        const user = auth.currentUser;
+        if (!user) {
+          setError("Debes iniciar sesión para ver tus partidos.");
+          setIsLoading(false);
+          return;
+        }
+        const userId = user.uid;
         const userMatches = await getMatchesForPlayer(userId);
-        
         setMatches(userMatches as Match[]);
       } catch (err) {
         console.error('Error al cargar partidos:', err);
@@ -56,34 +74,41 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
     };
 
     loadUserMatches();
-  }, []);
+  }, [auth.currentUser]);
 
-  const handleLeaveMatch = async (matchId: string, matchName: string) => {
-    const confirmed = window.confirm(
-      `¿Estás seguro de que quieres salir del partido "${matchName}"? Esta acción no se puede deshacer.`
-    );
+  const handleLeaveClick = (matchId: string, matchName: string) => {
+    setMatchToLeave({ id: matchId, name: matchName });
+    setShowConfirmDialog(true);
+  };
 
-    if (!confirmed) return;
+  const handleConfirmLeave = async () => {
+    if (!matchToLeave) return;
+
+    const { id: matchId, name: matchName } = matchToLeave;
 
     try {
       setLeavingMatchId(matchId);
-      
-      // TODO: Obtener el ID del usuario actual del contexto de autenticación
-      const userId = 'current-user-id';
-      
+      setShowConfirmDialog(false);
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("No se pudo verificar tu identidad. Por favor, inicia sesión de nuevo.");
+      }
+      const userId = user.uid;
+
       await leaveMatch(matchId, userId);
-      
+
       // Actualizar la lista de partidos
       const updatedMatches = await getMatchesForPlayer(userId);
       setMatches(updatedMatches as Match[]);
-      
-      alert('Has salido del partido exitosamente.');
+
+      toast.success('Has salido del partido exitosamente.');
       
     } catch (error) {
       console.error('Error al salir del partido:', error);
-      alert(error instanceof Error ? error.message : 'Error al salir del partido');
+      toast.error('Error al salir del partido', { description: error instanceof Error ? error.message : 'Ocurrió un error inesperado.' });
     } finally {
       setLeavingMatchId(null);
+      setMatchToLeave(null);
     }
   };
 
@@ -135,8 +160,11 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
   };
 
   const isUserCaptain = (match: Match) => {
-    // TODO: Obtener el ID del usuario actual del contexto de autenticación
-    const userId = 'current-user-id';
+    const user = auth.currentUser;
+    if (!user) {
+      return false;
+    }
+    const userId = user.uid;
     return match.captainId === userId;
   };
 
@@ -285,7 +313,7 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
                     
                     {canLeave && (
                       <button
-                        onClick={() => handleLeaveMatch(match.id, match.courtName)}
+                        onClick={() => handleLeaveClick(match.id, match.courtName)}
                         disabled={leavingMatchId === match.id}
                         className={`px-4 py-2 rounded-lg font-medium ${
                           leavingMatchId === match.id
@@ -322,6 +350,27 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
           </div>
         )}
       </div>
+
+      {/* Diálogo de Confirmación */}
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vas a salir del partido "{matchToLeave?.name}". Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmLeave}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Sí, salir del partido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
