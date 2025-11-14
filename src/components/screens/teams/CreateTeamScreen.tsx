@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { ArrowLeft, Upload, Users, Shield } from 'lucide-react';
 import { createTeam, getTeamById } from '../../../services/teamService';
 import { auth } from '../../../Firebase/firebaseConfig';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../../Firebase/firebaseConfig'; 
+import { toast } from 'sonner';
 
 interface CreateTeamScreenProps {
   onBack: () => void;
@@ -50,6 +53,17 @@ export function CreateTeamScreen({ onBack, onNavigate }: CreateTeamScreenProps) 
     }
   };
 
+  // Función para obtener el nombre del usuario desde Firestore
+  const getCurrentUserName = async (uid: string): Promise<string> => {
+    const userDocRef = doc(db, 'jugador', uid);
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+      return userDocSnap.data().name || 'Capitán Anónimo';
+    }
+    // Fallback si no se encuentra en 'jugador'
+    return auth.currentUser?.displayName || 'Capitán Anónimo';
+  };
+
   const handleCreateTeam = async () => {
     try {
       setIsLoading(true);
@@ -60,6 +74,8 @@ export function CreateTeamScreen({ onBack, onNavigate }: CreateTeamScreenProps) 
       if (!currentUser) {
         throw new Error('Debes estar autenticado para crear un equipo');
       }
+
+      const captainName = await getCurrentUserName(currentUser.uid);
       
       // Datos del equipo para Firebase
       const teamDataForFirebase = {
@@ -70,14 +86,28 @@ export function CreateTeamScreen({ onBack, onNavigate }: CreateTeamScreenProps) 
         isPrivate: teamData.isPrivate,
         requiresApproval: teamData.requiresApproval,
         captainId: currentUser.uid, // Usar el UID del usuario autenticado
-        captainName: currentUser.email || 'Usuario', // Usar el email como nombre temporal
+        captainName: captainName, // Usar el nombre real del capitán
         status: 'active' as const,
       };
 
       // Crear el equipo en Firebase
       const teamId = await createTeam(teamDataForFirebase);
       
-      console.log('Equipo creado exitosamente con ID:', teamId);
+      // Crear el chat para el equipo
+      const chatRef = doc(db, "chats", teamId);
+      await setDoc(chatRef, {
+        id: teamId,
+        name: `Equipo - ${teamData.name}`,
+        type: 'team',
+        participantsUids: [currentUser.uid],
+        ownerId: currentUser.uid,
+        lastMessage: `¡Bienvenidos a ${teamData.name}!`,
+        lastMessageTimestamp: serverTimestamp(),
+      });
+
+      toast.success('¡Equipo creado exitosamente!', {
+        description: `Tu equipo "${teamData.name}" ya está listo.`,
+      });
       
       // Navegar directamente a "Mis Equipos" para ver el equipo en la lista
       onNavigate('my-teams');
@@ -85,6 +115,7 @@ export function CreateTeamScreen({ onBack, onNavigate }: CreateTeamScreenProps) 
     } catch (error) {
       console.error('Error al crear el equipo:', error);
       setError(error instanceof Error ? error.message : 'Error desconocido al crear el equipo');
+      toast.error('Error al crear el equipo', { description: error instanceof Error ? error.message : 'Ocurrió un error inesperado.' });
     } finally {
       setIsLoading(false);
     }

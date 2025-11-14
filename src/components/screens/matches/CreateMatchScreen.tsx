@@ -7,9 +7,11 @@ import { Badge } from '../../ui/badge';
 import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { AppHeader } from '../../common/AppHeader';
-import { createMatch, getAllCourts } from '../../../services/matchService';
-import { auth } from '../../../Firebase/firebaseConfig';
-import { DocumentData } from 'firebase/firestore';
+import { createMatch, getAllCourts, MatchData } from '../../../services/matchService';
+import { getBookingsForDate } from '../../../services/bookingService'; // <-- IMPORTACIÓN AÑADIDA
+import { toast } from 'sonner';
+import { auth, db } from '../../../Firebase/firebaseConfig'; 
+import { DocumentData, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 interface CreateMatchScreenProps {
   onBack: () => void;
@@ -57,10 +59,10 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const selectedTeam = compatibleTeams.length > 0 ? compatibleTeams[0] : null;
 
   const sports = [
-    { id: 'football', name: 'Fútbol', icon: '⚽' },
-    { id: 'basketball', name: 'Básquetball', icon: '🏀' },
-    { id: 'tennis', name: 'Tenis', icon: '🎾' },
-    { id: 'volleyball', name: 'Volleyball', icon: '🏐' },
+    { id: 'futbol', name: 'Fútbol', icon: '⚽' },
+    { id: 'basquet', name: 'Básquetball', icon: '🏀' },
+    { id: 'tenis', name: 'Tenis', icon: '🎾' },
+    { id: 'volley', name: 'Vóleibol', icon: '🏐' },
     { id: 'padel', name: 'Pádel', icon: '🏓' },
     { id: 'futsal', name: 'Futsal', icon: '⚽' },
   ];
@@ -82,6 +84,9 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
 
     loadCourts();
   }, []);
+
+  // Filtrar canchas según el deporte seleccionado
+  const filteredCourts = courts.filter(court => court.sport === selectedSport);
 
   // Efecto para calcular el precio por jugador automáticamente
   useEffect(() => {
@@ -130,38 +135,45 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     <div className="space-y-6">
       <h2 className="text-white mb-4">Selecciona una cancha</h2>
       <div className="space-y-3">
-        {courts.map((court) => (
-          <Card 
-            key={court.id} 
-            className={`cursor-pointer transition-colors ${
-              selectedCourtId === court.id
-                ? 'border-[#f4b400] bg-[#f4b400]'
-                : 'border-gray-200'
-            }`}
-            onClick={() => setSelectedCourtId(court.id)}
-          >
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-[#172c44] mb-1">{court.name}</h3>
-                  <div className="flex items-center gap-4 text-sm text-gray-600">
-                    <div className="flex items-center gap-1">
-                      <MapPin size={14} />
-                      <span>{court.location?.address || 'Ubicación no disponible'}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span>⭐ {court.rating || 'N/A'}</span>
+        {filteredCourts.length > 0 ? (
+          filteredCourts.map((court) => (
+            <Card 
+              key={court.id} 
+              className={`cursor-pointer transition-colors ${
+                selectedCourtId === court.id
+                  ? 'border-[#f4b400] bg-[#f4b400]'
+                  : 'border-gray-200'
+              }`}
+              onClick={() => setSelectedCourtId(court.id)}
+            >
+              <CardContent className="p-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-[#172c44] mb-1">{court.name}</h3>
+                    <div className="flex items-center gap-4 text-sm text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <MapPin size={14} />
+                        <span>{court.location?.address || 'Ubicación no disponible'}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span>⭐ {court.rating || 'N/A'}</span>
+                      </div>
                     </div>
                   </div>
+                  <div className="text-right">
+                    <p className="text-[#00a884]">${court.pricePerHour?.toLocaleString() || 'N/A'}</p>
+                    <p className="text-xs text-gray-600">por hora</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-[#00a884]">${court.pricePerHour?.toLocaleString() || 'N/A'}</p>
-                  <p className="text-xs text-gray-600">por hora</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="text-center py-8 bg-white/10 rounded-lg">
+            <p className="text-white">No hay canchas disponibles para este deporte.</p>
+            <p className="text-gray-300 text-sm">Intenta seleccionar otro deporte.</p>
+          </div>
+        )}
       </div>
       <div className="flex gap-3">
         <Button 
@@ -242,8 +254,12 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
             {[6, 8, 10, 11, 14, 16, 18, 22].map((num) => (
               <Button
                 key={num}
-                variant={maxPlayers === num ? 'default' : 'outline'}
-                className="aspect-square bg-white/20 text-white border-white/30 data-[state=checked]:bg-white data-[state=checked]:text-black"
+                variant="outline"
+                className={`aspect-square transition-colors ${
+                  maxPlayers === num
+                    ? 'bg-[#f4b400] text-[#172c44] border-[#f4b400] font-bold'
+                    : 'bg-white/20 text-white border-white/30 hover:bg-white/30'
+                }`}
                 onClick={() => setMaxPlayers(num)}
               >
                 {num}
@@ -381,7 +397,16 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     setLoading(true);
     setError(null);
 
-    const matchData = {
+    try {
+      // --- VALIDACIÓN DE DISPONIBILIDAD ---
+      const selectedDateTime = new Date(matchDate + 'T' + matchTime);
+      const existingBookings = await getBookingsForDate(selectedCourtId, selectedDateTime);
+      const isSlotTaken = existingBookings.some(booking => booking.startTime === matchTime);
+
+      if (isSlotTaken) {
+        throw new Error(`La cancha ya está reservada a las ${matchTime}. Por favor, elige otro horario.`);
+      }
+    const matchData: MatchData = {
       sport: selectedSport,
       courtId: selectedCourtId,
       courtName: court.name,
@@ -393,28 +418,46 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       pricePerPlayer: pricePerPlayer,
       description: description,
       captainId: currentUser.uid,
-      captainName: currentUser.displayName || "Capitán Anónimo",
-      status: 'open',
-      players: [currentUser.uid],
-      currentPlayers: 1
+      captainName: await getCurrentUserName(currentUser.uid), // <-- CORRECCIÓN
     };
 
-    // Añadir información del equipo si está incluido
-    if (includeMyTeam && selectedTeam) {
-      matchData.teamId = selectedTeam.id;
-      matchData.teamName = selectedTeam.name;
-    }
-
-    try {
       const matchId = await createMatch(matchData);
-      alert("¡Partido creado exitosamente!");
+
+      // Crear el chat para el partido
+      const chatRef = doc(db, "chats", matchId);
+      await setDoc(chatRef, {
+        id: matchId,
+        name: `Partido - ${court.name}`,
+        type: 'match',
+        participantsUids: [currentUser.uid],
+        ownerId: currentUser.uid,
+        lastMessage: '¡Partido creado! Invita a tus amigos a unirse.',
+        lastMessageTimestamp: serverTimestamp(),
+      });
+
+      toast.success("¡Partido creado exitosamente!", {
+        description: `Tu partido en "${court.name}" ha sido publicado.`,
+      });
       onBack(); // Vuelve a la pantalla de inicio
     } catch (err: any) {
       setError(err.message || 'Error al crear el partido');
+      toast.error('No se pudo publicar el partido', { description: err.message });
     } finally {
       setLoading(false);
     }
   };
+
+  // Función para obtener el nombre del usuario desde Firestore
+  const getCurrentUserName = async (uid: string): Promise<string> => {
+    const userDocRef = doc(db, 'jugador', uid);
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+      return userDocSnap.data().name || 'Capitán Anónimo';
+    }
+    // Fallback si no se encuentra en 'jugador'
+    return auth.currentUser?.displayName || 'Capitán Anónimo';
+  };
+
 
   const renderStep4 = () => {
     const court = courts.find(c => c.id === selectedCourtId);

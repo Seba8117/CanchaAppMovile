@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Users, Crown, Settings, Search, Filter, Trash2, MoreVertical, Loader2, AlertTriangle } from 'lucide-react';
 // Removido 'notificationService' si no se usa. Añadidas importaciones de Firebase.
 import { AppHeader } from '../../common/AppHeader';
-import { TeamData } from '../../../services/teamService'; // Mantenemos tu tipo de datos
+import { TeamData, getPublicTeams, joinTeam } from '../../../services/teamService'; // Mantenemos tu tipo de datos
 import { auth, db } from '../../../Firebase/firebaseConfig';
-import { collection, query, where, onSnapshot, DocumentData } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, DocumentData, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
 
 interface Team {
@@ -32,6 +32,8 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recommendedTeams, setRecommendedTeams] = useState<TeamData[]>([]);
+  const [joiningTeamId, setJoiningTeamId] = useState<string | null>(null);
 
   // Escuchar cambios de autenticación
   useEffect(() => {
@@ -44,12 +46,12 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
   // Cargar equipos del usuario en tiempo real usando onSnapshot
   useEffect(() => {
     if (!currentUser) {
-      setTeams([]);
       setIsLoading(false);
       setError("No hay usuario autenticado.");
       return;
     }
 
+    // Carga de equipos del usuario
     setIsLoading(true);
     setError(null);
     
@@ -107,6 +109,21 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
       unsubCaptain();
       unsubMember();
     };
+  }, [currentUser]);
+
+  // Cargar equipos recomendados y filtrarlos
+  useEffect(() => {
+    const loadRecommendedTeams = async () => {
+      try {
+        const publicTeams = await getPublicTeams();
+        const userTeamIds = new Set(teams.map(t => t.id));
+        const filteredRecommended = publicTeams.filter(t => !userTeamIds.has(t.id));
+        setRecommendedTeams(filteredRecommended as TeamData[]);
+      } catch (err) {
+        console.error("Error loading recommended teams:", err);
+      }
+    };
+    loadRecommendedTeams();
   }, [currentUser]); // Se re-ejecuta si el usuario cambia
 
   // Convertir equipos de Firebase al formato de la interfaz Team
@@ -143,6 +160,38 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
     
     // Navegar directamente a la pantalla de confirmación de eliminación
     onNavigate('delete-team', team);
+  };
+
+  const handleJoinTeam = async (teamToJoin: TeamData) => {
+    if (!currentUser) {
+      setError("Debes iniciar sesión para unirte.");
+      return;
+    }
+    setJoiningTeamId(teamToJoin.id!);
+    try {
+      // Obtener el nombre del jugador desde Firestore
+      const userDocRef = doc(db, 'jugador', currentUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      const userName = userDocSnap.exists() ? userDocSnap.data().name : 'Nuevo Jugador';
+
+      await joinTeam(teamToJoin.id!, currentUser.uid, userName);
+      
+      // Añadir al usuario al chat del equipo
+      const chatRef = doc(db, "chats", teamToJoin.id!);
+      await updateDoc(chatRef, {
+        participantsUids: arrayUnion(currentUser.uid)
+      });
+
+      // Actualizar la UI: mover el equipo de recomendados a los del usuario
+      setRecommendedTeams(prev => prev.filter(t => t.id !== teamToJoin.id));
+      // La actualización de la lista 'teams' se hará automáticamente por el listener onSnapshot
+
+    } catch (error: any) {
+      console.error("Error al unirse al equipo:", error);
+      setError(error.message);
+    } finally {
+      setJoiningTeamId(null);
+    }
   };
   
   // --- RENDERIZADO ---
@@ -206,6 +255,53 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
       )}
     </div>
   );
+
+  const renderRecommendedTeamCard = (team: TeamData) => {
+    const isFull = (team.currentPlayers || 0) >= (team.maxPlayers || 1);
+    const isJoining = joiningTeamId === team.id;
+
+    return (
+      <div key={team.id} className="bg-white p-4 rounded-lg border border-[rgba(23,44,68,0.1)]">
+        <div className="flex items-center space-x-3 mb-3">
+          <div className="w-12 h-12 bg-[#e5e5e5] rounded-lg flex items-center justify-center">
+            <Users className="h-6 w-6 text-[#666666]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[#172c44] font-semibold truncate">{team.name}</h3>
+            <div className="flex items-center space-x-3 text-sm text-[#666666]">
+              <span>{team.sport}</span>
+              <span>{team.currentPlayers}/{team.maxPlayers}</span>
+            </div>
+          </div>
+        </div>
+        <p className="text-sm text-[#666666] mb-4 truncate">{team.description}</p>
+        <div className="flex justify-between items-center">
+          <div className="text-sm">
+            <p className="text-[#666666]">Capitán</p>
+            <p className="text-[#172c44] font-medium">{team.captainName}</p>
+          </div>
+          <button
+            onClick={() => handleJoinTeam(team)}
+            disabled={isFull || isJoining}
+            className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
+              isFull 
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
+                : isJoining
+                ? 'bg-gray-200 text-gray-500'
+                : 'bg-[#00a884] text-white hover:bg-[#008f73]'
+            }`}
+          >
+            {isJoining 
+              ? <Loader2 className="h-4 w-4 animate-spin" /> 
+              : isFull 
+              ? 'Lleno' 
+              : 'Unirse'
+            }
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   const renderEmptyState = () => (
     <div className="text-center py-12 bg-white/80 rounded-lg backdrop-blur-sm">
@@ -315,6 +411,16 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
       {/* Content */}
       <div className="p-4">
         {renderContent()}
+
+        {/* Sección de Equipos Recomendados */}
+        {recommendedTeams.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-white text-xl font-bold mb-4">Descubre Equipos</h2>
+            <div className="space-y-4">
+              {recommendedTeams.map(renderRecommendedTeamCard)}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Fixed create button for official teams */}

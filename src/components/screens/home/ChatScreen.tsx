@@ -37,6 +37,7 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
   const [loadingChats, setLoadingChats] = useState(true);
   const [errorChats, setErrorChats] = useState<string | null>(null);
 
+  const [activeTab, setActiveTab] = useState('all');
   const [selectedChat, setSelectedChat] = useState<DocumentData | null>(null);
   const [messages, setMessages] = useState<DocumentData[]>([]); // Estado para los mensajes reales
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -167,6 +168,15 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
     return name?.split(' ').map(n => n[0]).join('').toUpperCase() || '...';
   };
 
+  // Filtrar chats según la pestaña activa
+  const filteredChats = chats.filter(chat => {
+    if (activeTab === 'all') return true;
+    if (activeTab === 'matches') return chat.type === 'match';
+    if (activeTab === 'teams') return chat.type === 'team';
+    return true;
+  });
+
+
   // --- VISTA DE UN CHAT SELECCIONADO ---
   if (selectedChat) {
     return (
@@ -249,79 +259,51 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
       <AppHeader title="Mensajes" showLogo={true} showBackButton={true} onBack={onBack} />
       
       <div className="p-4">
-        <Tabs defaultValue="all">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="grid w-full grid-cols-3 mb-4">
             <TabsTrigger value="all">Todos</TabsTrigger>
             <TabsTrigger value="matches">Partidos</TabsTrigger>
             <TabsTrigger value="teams">Equipos</TabsTrigger>
           </TabsList>
-        </Tabs>
-      </div>
 
-      <div className="px-4 pb-4">
-        {loadingChats && (
-          <div className="flex justify-center p-8"><Loader2 className="animate-spin text-white" /></div>
-        )}
-        {errorChats && (
-          <Card className="bg-red-100 p-4"><p className="text-red-700">{errorChats}</p></Card>
-        )}
-        {!loadingChats && !errorChats && (
-          <Tabs defaultValue="all">
-            <TabsContent value="all" className="space-y-3">
-              {chats.length === 0 && (
-                <div className="text-center p-8 text-white/70">
-                  <MessageCircle size={48} className="mx-auto mb-4" />
-                  <p className="font-semibold">No estás en ningún chat todavía</p>
-                  <p className="text-sm">¡Únete a un partido o a un equipo para comenzar a chatear!</p>
-                </div>
-              )}
-              {chats.map((chat) => (
-                <Card key={chat.id} className="cursor-pointer hover:shadow-md" onClick={() => setSelectedChat(chat)}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="w-12 h-12">
-                        <AvatarFallback className="bg-[#f4b400] text-[#172c44] font-bold">
-                          {chat.type === 'match' ? '⚽' : (chat.type === 'team' ? '🏆' : '👤')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start mb-1">
-                          <h3 className="text-[#172c44] font-semibold truncate">{chat.name}</h3>
-                          {/* <span className="text-xs text-gray-500">{chat.lastMessageTimestamp?.toDate().toLocaleTimeString() || ''}</span> */}
+          {loadingChats && (
+            <div className="flex justify-center p-8"><Loader2 className="animate-spin text-white" /></div>
+          )}
+          {errorChats && (
+            <Card className="bg-red-100 p-4"><p className="text-red-700">{errorChats}</p></Card>
+          )}
+          {!loadingChats && !errorChats && (
+              <div className="space-y-3">
+                {filteredChats.length === 0 && (
+                  <div className="text-center p-8 text-white/70">
+                    <MessageCircle size={48} className="mx-auto mb-4" />
+                    <p className="font-semibold">No estás en ningún chat todavía</p>
+                    <p className="text-sm">¡Únete a un partido o a un equipo para comenzar a chatear!</p>
+                  </div>
+                )}
+                {filteredChats.map((chat) => (
+                  <Card key={chat.id} className="cursor-pointer hover:shadow-md" onClick={() => setSelectedChat(chat)}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="w-12 h-12">
+                          <AvatarFallback className="bg-[#f4b400] text-[#172c44] font-bold">
+                            {chat.type === 'match' ? '⚽' : (chat.type === 'team' ? '🏆' : '👤')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-1">
+                            <h3 className="text-[#172c44] font-semibold truncate">{chat.name}</h3>
+                            {/* <span className="text-xs text-gray-500">{chat.lastMessageTimestamp?.toDate().toLocaleTimeString() || ''}</span> */}
+                          </div>
+                          <p className="text-sm text-gray-600 truncate">{chat.lastMessage}</p>
                         </div>
-                        <p className="text-sm text-gray-600 truncate">{chat.lastMessage}</p>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </TabsContent>
-            
-            {/* Filtro de Partidos */}
-            <TabsContent value="matches" className="space-y-3">
-               {chats.filter(chat => chat.type === 'match').map((chat) => (
-                  <Card key={chat.id} className="cursor-pointer hover:shadow-md" onClick={() => setSelectedChat(chat)}>
-                    <CardContent className="p-4">{/* ... (renderizado similar al de 'all') ... */}</CardContent>
+                    </CardContent>
                   </Card>
-               ))}
-               {chats.filter(chat => chat.type === 'match').length === 0 && (
-                 <p className="text-center text-white/70 p-8">No tienes chats de partidos.</p>
-               )}
-            </TabsContent>
-            
-            {/* Filtro de Equipos */}
-            <TabsContent value="teams" className="space-y-3">
-               {chats.filter(chat => chat.type === 'team').map((chat) => (
-                  <Card key={chat.id} className="cursor-pointer hover:shadow-md" onClick={() => setSelectedChat(chat)}>
-                     <CardContent className="p-4">{/* ... (renderizado similar al de 'all') ... */}</CardContent>
-                  </Card>
-               ))}
-               {chats.filter(chat => chat.type === 'team').length === 0 && (
-                 <p className="text-center text-white/70 p-8">No tienes chats de equipos.</p>
-               )}
-            </TabsContent>
-          </Tabs>
-        )}
+                ))}
+              </div>
+          )}
+        </Tabs>
       </div>
     </div>
   );

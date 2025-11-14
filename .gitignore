@@ -122,3 +122,8 @@ firestore-debug.log
 *.tmp
 *.temp
 node_modules
+firestore.rules
+firestore.rules
+src/components/screens/booking/MyBookingsScreen.tsx
+src/components/screens/booking/MyBookingsScreen.tsx
+src/components/screens/booking/MyBookingsScreen.tsx

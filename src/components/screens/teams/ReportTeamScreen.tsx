@@ -11,51 +11,26 @@ import { Alert, AlertDescription } from '../../ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 
 interface ReportTeamScreenProps {
-  teamData?: any;
+  teams: any[]; // Recibe la lista de equipos como prop
   onBack: () => void;
+  onSubmit: (reportData: any) => void; // Función para manejar el envío
 }
 
-export function ReportTeamScreen({ teamData, onBack }: ReportTeamScreenProps) {
+export function ReportTeamScreen({ teams, onBack, onSubmit }: ReportTeamScreenProps) {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [selectedReason, setSelectedReason] = useState('');
   const [description, setDescription] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // Mock teams data - in real app this would come from API
-  const teams = [
-    {
-      id: 'team1',
-      name: 'Los Tigres FC',
-      captain: 'Juan Pérez',
-      members: 12,
-      avatar: 'LT',
-      lastMatch: 'Hace 2 días'
-    },
-    {
-      id: 'team2',
-      name: 'Águilas Doradas',
-      captain: 'María González',
-      members: 15,
-      avatar: 'AD',
-      lastMatch: 'Hace 1 semana'
-    },
-    {
-      id: 'team3',
-      name: 'Rayos United',
-      captain: 'Carlos Silva',
-      members: 18,
-      avatar: 'RU',
-      lastMatch: 'Hace 3 días'
-    },
-    {
-      id: 'team4',
-      name: 'Halcones FC',
-      captain: 'Ana Torres',
-      members: 10,
-      avatar: 'HF',
-      lastMatch: 'Ayer'
+  // Función para obtener las iniciales del equipo para el avatar
+  const getAvatarFallback = (name: string) => {
+    if (!name) return '';
+    const words = name.split(' ');
+    if (words.length > 1) {
+      return words[0][0] + words[1][0];
     }
-  ];
+    return name.substring(0, 2);
+  };
 
   const reportReasons = [
     {
@@ -99,8 +74,15 @@ export function ReportTeamScreen({ teamData, onBack }: ReportTeamScreenProps) {
 
   const handleSubmit = () => {
     if (selectedTeam && selectedReason && description.trim()) {
+      const reportData = {
+        teamId: selectedTeam,
+        reason: selectedReason,
+        description: description,
+        reportedAt: new Date(),
+      };
+      onSubmit(reportData); // Llama a la función onSubmit con los datos
       setIsSubmitted(true);
-      
+
       setTimeout(() => {
         onBack();
       }, 3000);
@@ -176,7 +158,7 @@ export function ReportTeamScreen({ teamData, onBack }: ReportTeamScreenProps) {
                     <div className="flex items-center gap-3 py-1">
                       <Avatar className="w-8 h-8">
                         <AvatarFallback className="bg-[#172c44] text-white text-xs">
-                          {team.avatar}
+                          {getAvatarFallback(team.name)}
                         </AvatarFallback>
                       </Avatar>
                       <div>
@@ -203,7 +185,7 @@ export function ReportTeamScreen({ teamData, onBack }: ReportTeamScreenProps) {
               <div className="flex items-center gap-3 mb-4">
                 <Avatar className="w-16 h-16">
                   <AvatarFallback className="bg-[#172c44] text-white">
-                    {selectedTeamData.avatar}
+                    {getAvatarFallback(selectedTeamData.name)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
