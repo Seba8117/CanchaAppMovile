@@ -1,12 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Trophy, Users, Calendar, MapPin, Clock, Loader2, AlertTriangle } from 'lucide-react';
+import { Trophy, Users, Calendar, MapPin, Clock } from 'lucide-react';
 import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import { AppHeader } from '../../common/AppHeader';
 import { OwnerNavigation } from '../../navigation/OwnerNavigation';
-import { auth, db } from '../../../Firebase/firebaseConfig';
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 
 interface TournamentsScreenProps {
   onBack?: () => void;
@@ -15,86 +12,128 @@ interface TournamentsScreenProps {
 }
 
 export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: TournamentsScreenProps) {
-  const [tournaments, setTournaments] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Diferentes torneos según el tipo de usuario
+  const playerTournaments = [
+    {
+      id: 1,
+      name: 'Copa de Fútbol Santiago',
+      sport: 'Fútbol',
+      prize: '$50.000',
+      teams: 16,
+      registeredTeams: 12,
+      format: 'Eliminación directa',
+      startDate: '25 Sep 2024',
+      endDate: '15 Oct 2024',
+      location: 'Múltiples canchas',
+      registrationDeadline: '20 Sep 2024',
+      status: 'Inscripciones abiertas',
+      organizer: 'Liga Deportiva Santiago',
+      description: 'El torneo de fútbol más grande de Santiago. 16 equipos compitiendo por el título.'
+    },
+    {
+      id: 2,
+      name: 'Torneo de Básquetball',
+      sport: 'Básquetball',
+      prize: '$30.000',
+      teams: 8,
+      registeredTeams: 6,
+      format: 'Round Robin',
+      startDate: '30 Sep 2024',
+      endDate: '10 Oct 2024',
+      location: 'Polideportivo Central',
+      registrationDeadline: '25 Sep 2024',
+      status: 'Inscripciones abiertas',
+      organizer: 'Club Básquetball Pro',
+      description: 'Torneo de básquetball 3x3. Formato round robin con playoffs.'
+    },
+    {
+      id: 3,
+      name: 'Liga de Tenis Mixto',
+      sport: 'Tenis',
+      prize: '$20.000',
+      teams: 12,
+      registeredTeams: 8,
+      format: 'Liga',
+      startDate: '05 Oct 2024',
+      endDate: '25 Oct 2024',
+      location: 'Club de Tenis Las Condes',
+      registrationDeadline: '28 Sep 2024',
+      status: 'Próximamente',
+      organizer: 'Federación de Tenis Amateur',
+      description: 'Liga de tenis en parejas mixtas. Todos los niveles bienvenidos.'
+    }
+  ];
 
-  useEffect(() => {
-    const fetchTournaments = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const currentUser = auth.currentUser;
-        let q;
+  const ownerTournaments = [
+    {
+      id: 1,
+      name: 'Copa Primavera 2024',
+      sport: 'Fútbol',
+      prize: '$500.000',
+      teams: 16,
+      registeredTeams: 12,
+      format: 'Eliminación Simple',
+      startDate: '15 Mar 2024',
+      endDate: '17 Mar 2024',
+      location: 'Mis Canchas',
+      registrationDeadline: '10 Mar 2024',
+      status: 'En curso',
+      organizer: 'Mi Complejo Deportivo',
+      description: 'Torneo de fútbol organizado en nuestras instalaciones. Gran participación.'
+    },
+    {
+      id: 2,
+      name: 'Torneo Básquetball Amateur',
+      sport: 'Básquetball',
+      prize: '$300.000',
+      teams: 8,
+      registeredTeams: 8,
+      format: 'Round Robin',
+      startDate: '25 Mar 2024',
+      endDate: '27 Mar 2024',
+      location: 'Cancha Básquetball',
+      registrationDeadline: '20 Mar 2024',
+      status: 'Inscripciones abiertas',
+      organizer: 'Mi Complejo Deportivo',
+      description: 'Torneo de básquetball 3x3 en nuestras modernas instalaciones.'
+    },
+    {
+      id: 3,
+      name: 'Copa de Tenis Mixto',
+      sport: 'Tenis',
+      prize: '$200.000',
+      teams: 12,
+      registeredTeams: 7,
+      format: 'Liga',
+      startDate: '05 Abr 2024',
+      endDate: '15 Abr 2024',
+      location: 'Canchas de Tenis',
+      registrationDeadline: '01 Abr 2024',
+      status: 'Finalizado',
+      organizer: 'Mi Complejo Deportivo',
+      description: 'Torneo de tenis en parejas mixtas con gran éxito de participación.'
+    }
+  ];
 
-        if (userType === 'owner') {
-          if (!currentUser) throw new Error("Debes iniciar sesión como dueño para ver tus torneos.");
-          q = query(collection(db, "tournaments"), where("ownerId", "==", currentUser.uid));
-        } else {
-          // Simplificamos la consulta para evitar la necesidad de un índice compuesto.
-          q = query(collection(db, "tournaments"));
-        }
-
-        const querySnapshot = await getDocs(q);
-        const tournamentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        // Si es un jugador, filtramos los resultados en el cliente.
-        if (userType === 'player') {
-          const availableTournaments = tournamentsData.filter(t => t.status === 'registration' || t.status === 'Próximamente');
-          setTournaments(availableTournaments);
-        } else {
-          setTournaments(tournamentsData);
-        }
-      } catch (err: any) {
-        console.error("Error fetching tournaments:", err);
-        setError("No se pudieron cargar los torneos.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchTournaments();
-  }, [userType]);
+  const tournaments = userType === 'owner' ? ownerTournaments : playerTournaments;
 
   const getSportEmoji = (sport: string) => {
-    switch (sport.toLowerCase()) {
-      case 'futbol': return '⚽';
-      case 'basquet': return '🏀';
-      case 'tenis': return '🎾';
-      case 'padel': return '🏓';
-      case 'volley': return '🏐';
+    switch (sport) {
+      case 'Fútbol': return '⚽';
+      case 'Básquetball': return '🏀';
+      case 'Tenis': return '🎾';
       default: return '🏆';
     }
   };
 
   const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'registration': return 'bg-green-100 text-green-700';
+    switch (status) {
+      case 'Inscripciones abiertas': return 'bg-green-100 text-green-700';
       case 'Próximamente': return 'bg-blue-100 text-blue-700';
-      case 'active': return 'bg-yellow-100 text-yellow-700';
-      case 'finalizado': return 'bg-gray-100 text-gray-700';
+      case 'En curso': return 'bg-yellow-100 text-yellow-700';
+      case 'Finalizado': return 'bg-gray-100 text-gray-700';
       default: return 'bg-gray-100 text-gray-700';
     }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'registration': return 'Inscripciones abiertas';
-      case 'active': return 'En curso';
-      case 'finalizado': return 'Finalizado';
-      default: return status;
-    }
-  };
-
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'N/A';
-    return timestamp.toDate().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
-
-  const formatPrize = (prize: any) => {
-    const numPrize = Number(prize);
-    if (isNaN(numPrize)) return '$0';
-    return `$${numPrize.toLocaleString('es-CL')}`;
   };
 
   return (
@@ -152,33 +191,10 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
             <h2 className={userType === 'owner' ? 'text-[#172c44]' : 'text-white'}>
               {userType === 'owner' ? 'Mis Torneos' : 'Torneos Disponibles'}
             </h2>
-            <span className={`text-sm ${userType === 'owner' ? 'text-[#172c44]/60' : 'text-white/80'}`}>{tournaments.length} torneos</span>
+            <span className={`text-sm ${userType === 'owner' ? 'text-[#172c44]/60' : 'text-[#172c44]'}`}>{tournaments.length} torneos</span>
           </div>
 
-          {isLoading && (
-            <div className="flex justify-center items-center py-16">
-              <Loader2 className={`animate-spin h-10 w-10 ${userType === 'owner' ? 'text-[#172c44]' : 'text-white'}`} />
-            </div>
-          )}
-
-          {!isLoading && error && (
-            <div className="text-center py-16 bg-white/20 rounded-lg">
-              <AlertTriangle className={`mx-auto h-10 w-10 mb-4 ${userType === 'owner' ? 'text-red-600' : 'text-red-300'}`} />
-              <p className={`${userType === 'owner' ? 'text-red-700' : 'text-red-200'}`}>{error}</p>
-            </div>
-          )}
-
-          {!isLoading && !error && tournaments.length === 0 && (
-            <div className={`text-center py-16 ${userType === 'owner' ? 'bg-white/80' : 'bg-white/10'} rounded-lg`}>
-              <Trophy className={`mx-auto h-12 w-12 mb-4 ${userType === 'owner' ? 'text-slate-400' : 'text-white/50'}`} />
-              <p className={`font-semibold ${userType === 'owner' ? 'text-slate-700' : 'text-white'}`}>
-                {userType === 'owner' ? 'Aún no has creado torneos' : 'No hay torneos disponibles'}
-              </p>
-            </div>
-          )}
-
-          {!isLoading && !error && (
-            <div className="space-y-4">
+          <div className="space-y-4">
             {tournaments.map((tournament) => (
               <Card key={tournament.id} className={`cursor-pointer transition-all ${
                 userType === 'owner' 
@@ -198,12 +214,12 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                         variant="secondary"
                         className={getStatusColor(tournament.status)}
                       >
-                        {getStatusText(tournament.status)}
+                        {tournament.status}
                       </Badge>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl text-[#00a884] mb-1">{formatPrize(tournament.prize)}</div>
+                    <div className="text-2xl text-[#00a884] mb-1">{tournament.prize}</div>
                     <div className="text-sm text-gray-600">Premio</div>
                   </div>
                 </div>
@@ -213,7 +229,11 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="flex items-center gap-2">
                     <Users className="text-[#172c44]" size={16} />
-                    <span className="text-sm">{tournament.registeredTeams || 0}/{tournament.maxTeams} equipos</span>
+                    <span className="text-sm">
+                      {Array.isArray(tournament.registeredTeams) 
+                        ? tournament.registeredTeams.length 
+                        : tournament.registeredTeams || 0}/{tournament.teams} equipos
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Trophy className="text-[#172c44]" size={16} />
@@ -221,11 +241,11 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar className="text-[#172c44]" size={16} />
-                    <span className="text-sm">{formatDate(tournament.startDate)}</span>
+                    <span className="text-sm">{tournament.startDate}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="text-[#172c44]" size={16} />
-                    <span className="text-sm">{tournament.courts?.join(', ') || 'Por definir'}</span>
+                    <span className="text-sm">{tournament.location}</span>
                   </div>
                 </div>
 
@@ -233,7 +253,7 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                   <div className="flex items-center gap-2">
                     <Clock className="text-yellow-700" size={16} />
                     <span className="text-sm text-yellow-800">
-                      <strong>Inscripciones hasta:</strong> {formatDate(tournament.registrationDeadline)}
+                      <strong>Inscripciones hasta:</strong> {tournament.registrationDeadline}
                     </span>
                   </div>
                 </div>
@@ -267,14 +287,14 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                     </Button>
                     <Button 
                       className={`flex-1 ${
-                        tournament.status === 'registration'
+                        tournament.status === 'Inscripciones abiertas'
                           ? 'bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44]'
                           : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       }`}
-                      disabled={tournament.status !== 'registration'}
+                      disabled={tournament.status !== 'Inscripciones abiertas'}
                       onClick={() => onNavigate?.('tournament-detail', tournament)}
                     >
-                      {tournament.status === 'registration' ? 'Inscribirse' : 'No disponible'}
+                      {tournament.status === 'Inscripciones abiertas' ? 'Inscribirse' : 'No disponible'}
                     </Button>
                   </div>
                 )}
@@ -282,7 +302,6 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
             </Card>
           ))}
           </div>
-          )}
         </div>
       </div>
 

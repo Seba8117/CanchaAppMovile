@@ -18,7 +18,6 @@ import {
   deleteDoc, // <-- Importado para borrar
   updateDoc,
   serverTimestamp,
-  orderBy, // <-- IMPORTACIÓN AÑADIDA
 } from 'firebase/firestore';
 // --- FIN: Importaciones de Firebase ---
 
@@ -69,7 +68,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
       return;
     }
     const courtsQuery = query(
-      collection(db, "courts"),
+      collection(db, "cancha"), 
       where("ownerId", "==", currentUser.uid)
     );
     const unsubscribe = onSnapshot(courtsQuery, (querySnapshot) => {
@@ -77,9 +76,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
         id: doc.id,
         ...doc.data(),
       })) as Court[];
-      // Ordenar las canchas localmente por fecha de actualización
-      const sortedCourts = courtsData.sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
-      setCourts(sortedCourts);
+      setCourts(courtsData);
       setLoading(false);
     }, (err) => {
       console.error("Error al obtener las canchas: ", err);
@@ -126,7 +123,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
 
     try {
       // Eliminar el documento de la cancha
-      await deleteDoc(doc(db, "courts", selectedCourt.id));
+      await deleteDoc(doc(db, "cancha", selectedCourt.id));
       
       // Opcional: mostrar un toast de éxito
       // toast.success("Cancha eliminada"); 
@@ -146,7 +143,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
   const handleToggleActive = async (e: React.MouseEvent, court: Court) => {
     e.stopPropagation();
     try {
-      const ref = doc(db, 'courts', court.id);
+      const ref = doc(db, 'cancha', court.id);
       await updateDoc(ref, { isActive: !court.isActive, updatedAt: serverTimestamp() });
     } catch (err) {
       console.error('Error al actualizar estado de la cancha: ', err);

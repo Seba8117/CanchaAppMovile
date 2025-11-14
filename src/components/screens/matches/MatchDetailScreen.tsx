@@ -1,13 +1,8 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
-import { Timestamp, doc, getDoc } from 'firebase/firestore';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
-import { auth, db } from '../../../Firebase/firebaseConfig';
-import { toast } from 'sonner';
-import { joinMatch } from '../../../services/matchService';
 
 interface MatchDetailScreenProps {
   match: any;
@@ -17,101 +12,15 @@ interface MatchDetailScreenProps {
 }
 
 export function MatchDetailScreen({ match, onBack, onNavigate, userType }: MatchDetailScreenProps) {
-  const [currentMatch, setCurrentMatch] = useState(match); // Estado local para el partido
-  const [playerDetails, setPlayerDetails] = useState<any[]>([]);
-  const [loadingPlayers, setLoadingPlayers] = useState(true);
-  const [isJoining, setIsJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
-
-  const currentUser = auth.currentUser;
-  const isUserInMatch = currentUser && currentMatch.players?.includes(currentUser.uid);
-  const isMatchFull = currentMatch.currentPlayers >= currentMatch.maxPlayers;
-
-  useEffect(() => {
-    const fetchPlayerDetails = async () => {
-      if (!currentMatch.players || currentMatch.players.length === 0) {
-        setLoadingPlayers(false);
-        return;
-      }
-      setLoadingPlayers(true);
-      try {
-        const playerPromises = currentMatch.players.map(async (playerId: string) => {
-          const playerDocRef = doc(db, 'jugador', playerId);
-          const playerDocSnap = await getDoc(playerDocRef);
-          if (playerDocSnap.exists()) {
-            return { id: playerId, ...playerDocSnap.data() };
-          }
-          return { id: playerId, name: 'Jugador Desconocido', rating: 0 };
-        });
-        const players = await Promise.all(playerPromises);
-        setPlayerDetails(players);
-      } catch (error) {
-        console.error("Error fetching player details:", error);
-      } finally {
-        setLoadingPlayers(false);
-      }
-    };
-
-    fetchPlayerDetails();
-  }, [currentMatch.players]);
-
-  const handleJoinMatch = async () => {
-    if (!currentUser) {
-      setJoinError("Debes iniciar sesión para unirte.");
-      return;
-    }
-    setIsJoining(true);
-    setJoinError(null);
-    try {
-      await joinMatch(match.id, currentUser.uid, currentUser.displayName || 'Jugador Anónimo');
-
-      // Obtener el nombre real del usuario desde Firestore
-      const userDocRef = doc(db, 'jugador', currentUser.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      let currentUserName = 'Jugador Anónimo';
-      if (userDocSnap.exists()) {
-        currentUserName = userDocSnap.data().name || 'Jugador Anónimo';
-      }
-
-      // Actualizar el estado local para reflejar el cambio inmediatamente
-      const newPlayer = {
-        id: currentUser.uid,
-        name: currentUserName, // <-- CORRECCIÓN
-        rating: 0, // O buscar el rating real si es necesario
-      };
-      
-      setPlayerDetails(prevDetails => [...prevDetails, newPlayer]);
-      setCurrentMatch((prevMatch: any) => ({
-        ...prevMatch,
-        players: [...prevMatch.players, currentUser.uid],
-        currentPlayers: prevMatch.currentPlayers + 1,
-      }));
-
-      toast.success("¡Te has unido al partido!", {
-        description: `Ahora eres parte del partido en "${currentMatch.courtName}".`,
-      });
-
-    } catch (error: any) {
-      setJoinError(error.message || "No se pudo unir al partido.");
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  // Función para formatear fechas de Firestore
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'Fecha no disponible';
-    const date = timestamp instanceof Timestamp ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
-  };
-
-  // Buscar los detalles del capitán en la lista de jugadores cargada
-  const captainDetails = playerDetails.find(p => p.id === currentMatch.captainId);
-
-  const getInitials = (name: string) => {
-    if (!name) return '?';
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
-  };
+  const players = [
+    { id: 1, name: 'Juan Pérez', position: 'Capitán', rating: 4.8, avatar: 'JP' },
+    { id: 2, name: 'María González', position: 'Defensa', rating: 4.5, avatar: 'MG' },
+    { id: 3, name: 'Carlos Silva', position: 'Medio', rating: 4.7, avatar: 'CS' },
+    { id: 4, name: 'Ana Torres', position: 'Delantera', rating: 4.9, avatar: 'AT' },
+    { id: 5, name: 'Luis Morales', position: 'Portero', rating: 4.6, avatar: 'LM' },
+    { id: 6, name: 'Sofia Ruiz', position: 'Medio', rating: 4.4, avatar: 'SR' },
+    { id: 7, name: 'Diego Fernández', position: 'Defensa', rating: 4.8, avatar: 'DF' },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884]">
@@ -140,16 +49,16 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             <div className="flex justify-between items-start mb-4">
               <div>
                 <Badge className="bg-[#f4b400] text-[#172c44] mb-2">
-                  {currentMatch.sport}
+                  {match.sport}
                 </Badge>
-                <h2 className="text-[#172c44] mb-1">{currentMatch.courtName || 'Cancha sin nombre'}</h2>
+                <h2 className="text-[#172c44] mb-1">{match.location}</h2>
                 <div className="flex items-center gap-1">
                   <Star className="text-[#f4b400]" size={14} fill="currentColor" />
-                  <span className="text-sm text-gray-600">{currentMatch.rating || 'N/A'} • Cancha verificada</span>
+                  <span className="text-sm text-gray-600">{match.rating} • Cancha verificada</span>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl text-[#00a884] mb-1">${currentMatch.pricePerPlayer?.toLocaleString() || '0'}</p>
+                <p className="text-2xl text-[#00a884] mb-1">{match.price}</p>
                 <p className="text-sm text-gray-600">por jugador</p>
               </div>
             </div>
@@ -157,19 +66,19 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="flex items-center gap-2">
                 <Calendar className="text-[#172c44]" size={16} />
-                <span className="text-sm">{formatDate(currentMatch.date)}</span>
+                <span className="text-sm">{match.date}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="text-[#172c44]" size={16} />
-                <span className="text-sm">{currentMatch.time}</span>
+                <span className="text-sm">{match.time}</span>
               </div>
               <div className="flex items-center gap-2">
                 <MapPin className="text-[#172c44]" size={16} />
-                <span className="text-sm">{currentMatch.location?.address || 'Ubicación no disponible'}</span>
+                <span className="text-sm">{match.distance}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Users className="text-[#172c44]" size={16} />
-                <span className="text-sm">{currentMatch.currentPlayers || 0}/{currentMatch.maxPlayers || 0}</span>
+                <span className="text-sm">{match.totalPlayers - match.playersNeeded}/{match.totalPlayers}</span>
               </div>
             </div>
 
@@ -188,12 +97,12 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             <h3 className="text-[#172c44] mb-3">Capitán del Equipo</h3>
             <div className="flex items-center gap-3">
               <Avatar className="w-12 h-12">
-                <AvatarFallback className="bg-[#f4b400] text-[#172c44] font-bold">
-                  {getInitials(captainDetails?.name || currentMatch.captainName)}
+                <AvatarFallback className="bg-[#f4b400] text-[#172c44]">
+                  JP
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <p className="text-[#172c44]">{captainDetails?.name || currentMatch.captainName || 'Capitán sin nombre'}</p>
+                <p className="text-[#172c44]">{match.captain}</p>
                 <div className="flex items-center gap-1">
                   <Star className="text-[#f4b400]" size={12} fill="currentColor" />
                   <span className="text-sm text-gray-600">4.8 • 127 partidos</span>
@@ -213,13 +122,13 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               <h3 className="text-[#172c44]">Jugadores Confirmados</h3>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="bg-[#00a884] text-white">
-                  {currentMatch.currentPlayers || 0}/{currentMatch.maxPlayers || 0}
+                  {players.length}/{match.totalPlayers}
                 </Badge>
                 {userType === 'player' && onNavigate && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onNavigate('match-players', currentMatch)}
+                    onClick={() => onNavigate('match-players', match)}
                     className="text-[#172c44] border-[#172c44] hover:bg-[#172c44] hover:text-white"
                   >
                     <Eye size={14} className="mr-1" />
@@ -229,27 +138,23 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               </div>
             </div>
             <div className="space-y-3">
-              {loadingPlayers ? (
-                <div className="flex justify-center p-4"><Loader2 className="animate-spin text-gray-500" /></div>
-              ) : (
-                playerDetails.map((player) => (
-                  <div key={player.id} className="flex items-center gap-3">
-                    <Avatar className="w-10 h-10">
-                      <AvatarFallback className="bg-gray-200 text-[#172c44] text-sm">
-                        {getInitials(player.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <p className="text-sm text-[#172c44]">{player.name}</p>
-                      <p className="text-xs text-gray-600">{player.id === currentMatch.captainId ? 'Capitán' : 'Jugador'}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Star className="text-[#f4b400]" size={12} fill="currentColor" />
-                      <span className="text-xs text-gray-600">{player.rating || 'N/A'}</span>
-                    </div>
+              {players.map((player) => (
+                <div key={player.id} className="flex items-center gap-3">
+                  <Avatar className="w-10 h-10">
+                    <AvatarFallback className="bg-gray-200 text-[#172c44] text-sm">
+                      {player.avatar}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <p className="text-sm text-[#172c44]">{player.name}</p>
+                    <p className="text-xs text-gray-600">{player.position}</p>
                   </div>
-                ))
-              )}
+                  <div className="flex items-center gap-1">
+                    <Star className="text-[#f4b400]" size={12} fill="currentColor" />
+                    <span className="text-xs text-gray-600">{player.rating}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -272,22 +177,11 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
       </div>
 
       {/* Fixed Bottom Button */}
-      <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-200 max-w-sm mx-auto">
-        {joinError && <p className="text-red-500 text-center text-sm mb-2">{joinError}</p>}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200">
         <Button 
           className="w-full bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] h-12"
-          onClick={handleJoinMatch}
-          disabled={isJoining || isUserInMatch || isMatchFull}
         >
-          {isJoining ? (
-            <Loader2 className="animate-spin" />
-          ) : isUserInMatch ? (
-            'Ya estás en el partido'
-          ) : isMatchFull ? (
-            'Partido Lleno'
-          ) : (
-            `Unirse al Partido - $${currentMatch.pricePerPlayer?.toLocaleString() || '0'}`
-          )}
+          Unirse al Partido - {match.price}
         </Button>
       </div>
     </div>

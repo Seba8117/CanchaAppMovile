@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { AppHeader } from '../../common/AppHeader';
 import { doc, getDoc, DocumentData } from 'firebase/firestore';
 import { db, auth } from '../../../Firebase/firebaseConfig';
-import { toast } from 'sonner';
 import { createBooking, getBookingsForDate } from '../../../services/bookingService';
 
 interface CreateBookingScreenProps {
@@ -26,7 +25,7 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
   useEffect(() => {
     const fetchCourtData = async () => {
       try {
-        const courtRef = doc(db, 'courts', courtId);
+        const courtRef = doc(db, 'cancha', courtId);
         const courtSnap = await getDoc(courtRef);
         if (courtSnap.exists()) {
           const data = courtSnap.data();
@@ -102,12 +101,10 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
         price: court.pricePerHour,
       };
       await createBooking(bookingData);
-      toast.success('¡Reserva confirmada exitosamente!', {
-        description: `Tu reserva para ${court.name} el ${selectedDate.toLocaleDateString()} a las ${selectedTime} ha sido guardada.`,
-      });
+      alert('¡Reserva confirmada exitosamente!');
       onNavigate('my-bookings'); // Navegar a una pantalla de "Mis Reservas"
     } catch (err: any) {
-      toast.error('Error al reservar', { description: err.message });
+      setError(err.message);
     } finally {
       setBookingLoading(false);
     }
