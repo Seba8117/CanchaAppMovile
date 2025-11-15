@@ -242,8 +242,10 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
             {[6, 8, 10, 11, 14, 16, 18, 22].map((num) => (
               <Button
                 key={num}
-                variant={maxPlayers === num ? 'default' : 'outline'}
-                className="aspect-square bg-white/20 text-white border-white/30 data-[state=checked]:bg-white data-[state=checked]:text-black"
+                variant="outline"
+                className={`${maxPlayers === num
+                  ? 'aspect-square bg-[#f4b400] text-[#172c44] border-transparent'
+                  : 'aspect-square bg-white/20 text-white border-white/30 hover:bg-white/30'} `}
                 onClick={() => setMaxPlayers(num)}
               >
                 {num}

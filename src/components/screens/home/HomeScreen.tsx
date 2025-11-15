@@ -230,7 +230,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
           {/* --- BOTÓN MODIFICADO --- */}
           <Button
             variant="outline"
-            className="h-16 flex-col gap-2 border-[#93c5fd] text-[#93c5fd] hover:bg-[#93c5fd] hover:text-white"
+            className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]"
             onClick={() => onNavigate('chat')}
           >
             <MessageCircle size={20} />
@@ -258,14 +258,14 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
            </Button>
           <Button
             variant="outline"
-            className="h-16 flex-col gap-2 border-purple-700 text-purple-700 hover:bg-purple-700 hover:text-white"
+            className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]"
             onClick={() => onNavigate('my-teams')}
           >
             <Users size={20} />
             Mis Equipos
           </Button>
           <Button variant="outline" 
-          className="h-16 flex-col gap-2 border-[#93c5fd] text-[#93c5fd] hover:bg-[#93c5fd] hover:text-white" 
+          className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]" 
           onClick={() => onNavigate('my-bookings')}>
             <Calendar size={20} />
             Mis Reservas

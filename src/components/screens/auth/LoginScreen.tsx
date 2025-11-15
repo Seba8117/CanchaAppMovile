@@ -114,11 +114,13 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     } catch (err: any) {
       console.error("Error de autenticación:", err);
       
-      let friendlyMessage = err.message; // Usamos el mensaje del nuevo error primero
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        friendlyMessage = "Correo electrónico o contraseña incorrectos.";
+      let friendlyMessage = err.message;
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        friendlyMessage = "Correo o contraseña invalidas";
       } else if (err.code === 'auth/email-already-in-use') {
         friendlyMessage = "Este correo electrónico ya está registrado.";
+      } else if (err.code === 'auth/invalid-email') {
+        friendlyMessage = "Correo inválido.";
       }
       
       setError(friendlyMessage);

@@ -37,6 +37,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     activeTournaments: 0,
     averageRating: 0,
   });
+  const [bookingsToday, setBookingsToday] = useState(0);
+  const today = useMemo(() => new Date(), []);
+  const [todayLabel, setTodayLabel] = useState({ day: today.getDate(), month: today.toLocaleString('es-ES', { month: 'short' }) });
 
   const [recentBookings, setRecentBookings] = useState<Array<{
     id: string;
@@ -95,6 +98,20 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
         const currentBookings = currentBookingsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const totalBookings = currentBookings.length;
         const monthlyRevenue = currentBookings.reduce((sum, b: any) => sum + (Number(b.price) || 0), 0);
+
+        // 2b) Reservas de HOY (conteo)
+        const dayStart = new Date();
+        dayStart.setHours(0,0,0,0);
+        const dayEnd = new Date();
+        dayEnd.setHours(23,59,59,999);
+        const bookingsTodayQ = query(
+          bookingsRef,
+          where('ownerId', '==', currentUser.uid),
+          where('date', '>=', Timestamp.fromDate(dayStart)),
+          where('date', '<=', Timestamp.fromDate(dayEnd))
+        );
+        const bookingsTodaySnap = await getDocs(bookingsTodayQ);
+        const bookingsTodayCount = bookingsTodaySnap.size;
 
         // 3) Ingresos del mes anterior para variación
         const prevBookingsQ = query(
@@ -166,7 +183,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           monthlyRevenue,
           revenueDeltaPct,
           activeTournaments,
+          averageRating: Number(ratingsAvg.toFixed(1)),
         }));
+        setBookingsToday(bookingsTodayCount);
         setRecentBookings(recent);
         setTournaments(mappedTournaments);
       } catch (e) {
@@ -538,16 +557,16 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             {/* Quick Stats Row */}
             <div className="grid grid-cols-3 gap-4 mt-8">
               <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-indigo-700">85%</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-indigo-600 mt-1">Ocupación</p>
+                <p className="font-['Outfit'] font-black text-2xl text-indigo-700">{bookingsToday}</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-indigo-600 mt-1">Reservas Hoy</p>
               </div>
               <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-emerald-700">4.8</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-emerald-600 mt-1">Rating</p>
+                <p className="font-['Outfit'] font-black text-2xl text-emerald-700">{Number(stats.averageRating || 0).toFixed(1)}</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-emerald-600 mt-1">Rating Promedio</p>
               </div>
               <div className="bg-gradient-to-br from-orange-50 to-amber-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-amber-700">12</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-amber-600 mt-1">Hoy</p>
+                <p className="font-['Outfit'] font-black text-2xl text-amber-700">{todayLabel.day}</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-amber-600 mt-1">{todayLabel.month}</p>
               </div>
             </div>
           </TabsContent>
