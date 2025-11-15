@@ -83,18 +83,13 @@ export default function App() {
   */
   // --- FIN CÓDIGO DE PRUEBA ---
 
-  const handleLogin = (type: "player" | "owner") => {
-    if (currentUser) {
-      setIsLoggedIn(true);
-      setUserType(type);
-      setCurrentScreen(
-        type === "owner" ? "owner-dashboard" : "home",
-      );
-      console.log("Usuario logueado correctamente con Firebase Auth");
-    } else {
-      console.error("Error: Intentando hacer login sin autenticación de Firebase");
-      setError("Error de autenticación. Por favor, intenta de nuevo.");
-    }
+  const handleLogin = (type: "player" | "owner", user: User) => {
+    setCurrentUser(user);
+    setIsLoggedIn(true);
+    setUserType(type);
+    setCurrentScreen(type === "owner" ? "owner-dashboard" : "home");
+    setError(null);
+    console.log("Usuario logueado correctamente con Firebase Auth");
   };
 
   const handleLogout = async () => {
