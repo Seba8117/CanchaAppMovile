@@ -128,7 +128,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'available': return 'Disponible';
+      case 'available': return 'Activo';
       case 'occupied': return 'Ocupada';
       case 'maintenance': return 'Mantenimiento';
       case 'confirmed': return 'Confirmada';

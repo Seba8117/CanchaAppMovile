@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 // 1. AÑADIDO 'MessageSquare'
 import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare } from 'lucide-react';
 import { Button } from '../../ui/button';
@@ -60,6 +60,15 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     prize: number;
     status: string;
   }>>([]);
+  
+  const [dashboardTotals, setDashboardTotals] = useState({
+    tournamentsRegistered: 0,
+    tournamentsCompleted: 0,
+    teamsTotal: 0,
+  });
+
+  const [screenLoading, setScreenLoading] = useState(true);
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   // Helpers de rango de fechas del mes actual y anterior
   const monthRanges = useMemo(() => {
@@ -183,13 +192,17 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           monthlyRevenue,
           revenueDeltaPct,
           activeTournaments,
-          averageRating: Number(ratingsAvg.toFixed(1)),
+          averageRating: s.averageRating,
         }));
         setBookingsToday(bookingsTodayCount);
         setRecentBookings(recent);
         setTournaments(mappedTournaments);
+        setScreenError(null);
+        setScreenLoading(false);
       } catch (e) {
         console.error('Error cargando dashboard del dueño:', e);
+        setScreenError('Error al cargar el dashboard');
+        setScreenLoading(false);
       }
     };
 
@@ -207,49 +220,268 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     );
     const unsubscribe = onSnapshot(q, (snap) => {
       setStats((s) => ({ ...s, totalCourts: snap.size }));
+      setScreenLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const courts = [
-    {
-      id: 1,
-      name: 'Cancha Principal',
-      sport: 'Fútbol',
-      surface: 'Césped sintético',
-      capacity: 22,
-      pricePerHour: 25000,
-      status: 'available',
-      bookingsToday: 6,
-      rating: 4.8
-    },
-    {
-      id: 2,
-      name: 'Cancha Básquetball',
-      sport: 'Básquetball',
-      surface: 'Madera',
-      capacity: 10,
-      pricePerHour: 20000,
-      status: 'occupied',
-      bookingsToday: 4,
-      rating: 4.6
-    },
-    {
-      id: 3,
-      name: 'Cancha Tenis Norte',
-      sport: 'Tenis',
-      surface: 'Arcilla',
-      capacity: 4,
-      pricePerHour: 15000,
-      status: 'maintenance',
-      bookingsToday: 0,
-      rating: 4.9
+  
+
+  // Suscripción en tiempo real: torneos del dueño (registrados y finalizados)
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const q = query(collection(db, 'torneo'), where('ownerId', '==', currentUser.uid));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const total = snap.size;
+      const completed = snap.docs.filter((d) => (d.data() as any).status === 'finalizado').length;
+      setDashboardTotals((t) => ({ ...t, tournamentsRegistered: total, tournamentsCompleted: completed }));
+      // Mantener coherencia con tarjeta de "Torneos Activos"
+      const activeCount = snap.docs.filter((d) => (d.data() as any).status !== 'finalizado').length;
+      setStats((s) => ({ ...s, activeTournaments: activeCount }));
+      setScreenLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Suscripción en tiempo real: equipos totales del dueño
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const q = query(collection(db, 'teams'), where('ownerId', '==', currentUser.uid));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setDashboardTotals((t) => ({ ...t, teamsTotal: snap.size }));
+      setScreenLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const [courtsData, setCourtsData] = useState<Array<{
+    id: string | number;
+    name: string;
+    sport: string;
+    surface: string;
+    capacity: number;
+    pricePerHour: number;
+    status: string;
+    bookingsToday: number;
+    rating: number;
+  }>>([]);
+  const [loadingCourts, setLoadingCourts] = useState(false);
+  const [courtsError, setCourtsError] = useState<string | null>(null);
+  const [courtsErrorType, setCourtsErrorType] = useState<string | null>(null);
+  const [visibleCourtsCount, setVisibleCourtsCount] = useState(20);
+
+  // Helpers compartidos para cache y mapeo de estados (disponibles en todos los efectos)
+  const cacheKeyRef = useRef<string>(`courts:${auth.currentUser?.uid || 'anon'}`);
+  const loadFromCache = () => {
+    try {
+      const raw = localStorage.getItem(cacheKeyRef.current);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.items)) return;
+      setCourtsData(parsed.items);
+    } catch {}
+  };
+  const saveToCache = (items: any) => {
+    try {
+      localStorage.setItem(cacheKeyRef.current, JSON.stringify({ items, ts: Date.now() }));
+    } catch {}
+  };
+  const mapStatus = (s: string) => {
+    if (!s) return 'available';
+    const val = String(s).toLowerCase();
+    if (val === 'active' || val === 'activo') return 'available';
+    if (val === 'occupied' || val === 'ocupada' || val === 'ocupado') return 'occupied';
+    if (val === 'maintenance' || val === 'mantenimiento') return 'maintenance';
+    return s || 'available';
+  };
+  const mapItem = (it: any) => ({
+    id: it.id ?? it._id ?? Math.random(),
+    name: it.name ?? it.nombre ?? 'Cancha',
+    sport: it.sport ?? it.deporte ?? 'Fútbol',
+    surface: it.surface ?? it.superficie ?? 'Césped sintético',
+    capacity: Number(it.capacity ?? it.capacidad ?? 10),
+    pricePerHour: Number(it.pricePerHour ?? it.precioPorHora ?? it.price ?? 0),
+    status: mapStatus(it.status ?? it.estado ?? (it.isActive ?? it.activo ? 'active' : 'maintenance')),
+    bookingsToday: Number(it.bookingsToday ?? it.reservasHoy ?? 0),
+    rating: Number(it.rating ?? it.puntuacion ?? 4.5),
+  });
+
+  const sportSvg = (sport: string) => {
+    const s = (sport || '').toLowerCase();
+    if (s.includes('fut')) {
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
+          <circle cx="12" cy="12" r="10" fill="#FFF" stroke="#172c44" strokeWidth="1.5" />
+          <path d="M12 2l3 4-3 3-3-3 3-4z" fill="#172c44" />
+          <path d="M5 14l3-2 2 3-3 2-2-3z" fill="#172c44" />
+          <path d="M16 12l3 2-2 3-3-2 2-3z" fill="#172c44" />
+        </svg>
+      );
     }
-  ];
+    if (s.includes('bás') || s.includes('basq')) {
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
+          <circle cx="12" cy="12" r="10" fill="#ff8f00" stroke="#6d4c41" strokeWidth="1.5" />
+          <path d="M4 12h16M12 4v16M6 6l12 12M6 18L18 6" stroke="#6d4c41" strokeWidth="1.2" fill="none" />
+        </svg>
+      );
+    }
+    if (s.includes('ten')) {
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
+          <circle cx="12" cy="12" r="10" fill="#8bc34a" stroke="#33691e" strokeWidth="1.5" />
+          <path d="M6 8c2.5 2 6.5 2 9 0M6 16c2.5-2 6.5-2 9 0" stroke="#33691e" strokeWidth="1.2" fill="none" />
+        </svg>
+      );
+    }
+    if (s.includes('pádel') || s.includes('padel') || s.includes('pade')) {
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
+          <circle cx="9" cy="10" r="6" fill="#cddc39" stroke="#827717" strokeWidth="1.5" />
+          <rect x="14" y="12" width="6" height="2" rx="1" fill="#827717" />
+        </svg>
+      );
+    }
+    if (s.includes('vól') || s.includes('vole') || s.includes('vol')) {
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
+          <circle cx="12" cy="12" r="10" fill="#eceff1" stroke="#37474f" strokeWidth="1.5" />
+          <path d="M4 12c6-5 10-5 16 0M6 6c4 4 8 4 12 0M6 18c4-4 8-4 12 0" stroke="#37474f" strokeWidth="1.2" fill="none" />
+        </svg>
+      );
+    }
+    return (
+      <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
+        <circle cx="12" cy="12" r="10" fill="#e0e0e0" stroke="#616161" strokeWidth="1.5" />
+      </svg>
+    );
+  };
 
   // recentBookings ahora viene de Firestore
 
   // tournaments ahora viene de Firestore
+
+  useEffect(() => {
+    let polling: any;
+    const lastFetchRef: { current: number } = { current: 0 };
+    const retryRef: { current: number } = { current: 0 };
+    const apiUrl = (import.meta as any).env?.VITE_COURTS_API_URL || 'https://api.canchaapp.local/courts';
+    const apiKey = (import.meta as any).env?.VITE_COURTS_API_KEY;
+    const fallbackFromFirestore = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+        const q = query(collection(db, 'cancha'), where('ownerId', '==', user.uid), where('isActive', '==', true));
+        const snap = await getDocs(q);
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const mapped = items.map(mapItem);
+        setCourtsData(mapped);
+        saveToCache(mapped);
+        setVisibleCourtsCount((c) => Math.min(mapped.length, 20));
+      } catch (err) {
+        console.error('Firestore fallback error', err);
+      }
+    };
+    const refresh = async (manual = false) => {
+      if (!navigator.onLine) {
+        setCourtsError('Sin conexión a internet');
+        setCourtsErrorType('offline');
+        return;
+      }
+      const now = Date.now();
+      if (now - lastFetchRef.current < 1000 && !manual) return;
+      lastFetchRef.current = now;
+      setLoadingCourts(true);
+      setCourtsError(null);
+      setCourtsErrorType(null);
+      try {
+        const user = auth.currentUser;
+        const token = await user?.getIdToken?.();
+        const ownerId = auth.currentUser?.uid;
+        const url = ownerId ? `${apiUrl}?ownerId=${encodeURIComponent(ownerId)}` : apiUrl;
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (apiKey) headers['X-API-Key'] = String(apiKey);
+        const res = await fetch(url, { headers });
+        if (res.status === 401) {
+          setCourtsError('Sesión expirada');
+          setCourtsErrorType('expired');
+          throw new Error('Unauthorized');
+        }
+        if (!res.ok) {
+          setCourtsError('Error del servidor');
+          setCourtsErrorType('server');
+          throw new Error(`Server error ${res.status}`);
+        }
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : Array.isArray(data?.canchas) ? data.canchas : null;
+        if (!list) {
+          setCourtsError('Datos corruptos');
+          setCourtsErrorType('corrupt');
+          throw new Error('Invalid data');
+        }
+        const filtered = list.filter((x: any) => {
+          const st = (x.status ?? x.estado ?? '').toLowerCase();
+          const activeFlag = Boolean(x.isActive ?? x.activo);
+          return st === 'active' || st === 'activo' || activeFlag;
+        });
+        const mapped = filtered.map(mapItem);
+        setCourtsData(mapped);
+        saveToCache(mapped);
+        retryRef.current = 0;
+        setVisibleCourtsCount((c) => Math.min(mapped.length, 20));
+        const schedule = () => {
+          const grow = () => setVisibleCourtsCount((c) => (c < mapped.length ? Math.min(mapped.length, c + 20) : c));
+          if ((window as any).requestIdleCallback) (window as any).requestIdleCallback(grow);
+          else setTimeout(grow, 300);
+        };
+        schedule();
+      } catch (e) {
+        console.error('Courts API error', { type: courtsErrorType, error: e });
+        // Fallback inmediato a Firestore para no ocultar canchas activas
+        fallbackFromFirestore();
+        retryRef.current = Math.min(retryRef.current + 1, 5);
+        const delay = Math.min(30000, 2000 * Math.pow(2, retryRef.current));
+        setTimeout(() => refresh(true), delay);
+      } finally {
+        setLoadingCourts(false);
+      }
+    };
+    loadFromCache();
+    refresh(true);
+    const onManual = () => refresh(true);
+    window.addEventListener('manual-refresh', onManual);
+    polling = setInterval(() => refresh(false), 15000);
+    return () => {
+      if (polling) clearInterval(polling);
+      window.removeEventListener('manual-refresh', onManual);
+    };
+  }, []);
+
+  // Suscripción en tiempo real a canchas activas desde Firestore como respaldo
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    const user = auth.currentUser;
+    if (!user) return;
+    if (courtsData.length > 0) return; // Si ya hay datos desde API, no duplicar
+    try {
+      const q = query(collection(db, 'cancha'), where('ownerId', '==', user.uid), where('isActive', '==', true));
+      unsubscribe = onSnapshot(q, (snap) => {
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const mapped = items.map(mapItem);
+        setCourtsData(mapped);
+        saveToCache(mapped);
+        setVisibleCourtsCount((c) => Math.min(mapped.length, 20));
+      });
+    } catch (e) {
+      console.error('Realtime courts subscription error', e);
+    }
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [courtsData.length]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -267,7 +499,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'available': return 'Disponible';
+      case 'available': return 'Activo';
       case 'occupied': return 'Ocupada';
       case 'maintenance': return 'Mantenimiento';
       case 'confirmed': return 'Confirmada';
@@ -349,6 +581,16 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
       />
 
       <div className="px-4 py-6 relative z-10">
+        {screenLoading && (
+          <div className="mb-4 bg-white/80 backdrop-blur-sm rounded-2xl p-4 text-center shadow">
+            <p className="font-['Outfit'] font-semibold text-sm text-slate-700">Cargando Dashboard...</p>
+          </div>
+        )}
+        {screenError && (
+          <div className="mb-4 bg-rose-100 text-rose-700 rounded-2xl p-4 text-center font-['Outfit'] font-semibold">
+            {screenError}
+          </div>
+        )}
         {/* Dynamic Sports Stats */}
         <div className="grid grid-cols-2 gap-4 mb-8">
           {/* Canchas Card */}
@@ -586,10 +828,53 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                 <Plus size={20} className="mr-2" />
                 Nueva Cancha
               </Button>
+              <Button 
+                size="sm" 
+                variant="outline"
+                className="ml-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-['Outfit'] font-bold shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl px-6"
+                onClick={() => {
+                  const ev = new Event('manual-refresh');
+                  window.dispatchEvent(ev);
+                }}
+              >
+                Actualizar
+              </Button>
             </div>
 
+            {loadingCourts && courtsData.length === 0 && (
+              <div className="space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="bg-white/60 backdrop-blur-sm border-0 rounded-2xl shadow-xl">
+                    <CardContent className="p-5 relative">
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-200 to-indigo-200"></div>
+                      <div className="animate-pulse">
+                        <div className="h-4 bg-slate-200 rounded w-1/3 mb-4"></div>
+                        <div className="space-y-2">
+                          <div className="h-3 bg-slate-200 rounded w-1/2"></div>
+                          <div className="h-3 bg-slate-200 rounded w-1/4"></div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {courtsError && (
+              <div className="bg-orange-100 text-orange-700 rounded-2xl p-4 text-center font-['Outfit'] font-semibold">
+                {courtsError}
+              </div>
+            )}
+
+            {!loadingCourts && courtsData.length === 0 && !courtsError && (
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-4 text-center">
+                <p className="font-['Outfit'] font-black text-2xl text-indigo-700">0</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-indigo-600 mt-1">No existen canchas activas</p>
+              </div>
+            )}
+
             <div className="space-y-4">
-              {courts.map((court, index) => (
+              {courtsData.slice(0, visibleCourtsCount).map((court, index) => (
                 <Card key={court.id} className={`bg-white/80 backdrop-blur-sm border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden ${
                   court.sport === 'Fútbol' ? 'shadow-emerald-200/50 hover:shadow-emerald-300/60' :
                   court.sport === 'Básquetball' ? 'shadow-orange-200/50 hover:shadow-orange-300/60' :
@@ -616,10 +901,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                         
                         <div className="ml-6">
                           <div className="flex items-center gap-3 mb-2">
-                            <p className="font-['Outfit'] font-semibold text-base text-slate-700">
-                              {court.sport === 'Fútbol' ? '⚽' : 
-                               court.sport === 'Básquetball' ? '🏀' : '🎾'} {court.sport}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              {sportSvg(court.sport)}
+                              <p className="font-['Outfit'] font-semibold text-base text-slate-700">
+                                {court.sport}
+                              </p>
+                            </div>
                             <span className="text-slate-400">•</span>
                             <p className="font-['Outfit'] font-medium text-sm text-slate-600">{court.surface}</p>
                           </div>
@@ -627,9 +914,6 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                             <span className="flex items-center gap-1">
                               <Users size={14} />
                               {court.capacity} jugadores
-                            </span>
-                            <span className="flex items-center gap-1">
-                              ⭐ {court.rating}/5.0
                             </span>
                           </div>
                         </div>
@@ -816,11 +1100,11 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             {/* Tournament Stats */}
             <div className="grid grid-cols-2 gap-4 mt-8">
               <div className="bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl p-6 text-center">
-                <p className="font-['Outfit'] font-black text-3xl text-orange-600">24</p>
-                <p className="font-['Outfit'] font-bold text-sm text-orange-700 mt-2">🏆 Torneos Completados</p>
+                <p className="font-['Outfit'] font-black text-3xl text-orange-600">{dashboardTotals.tournamentsRegistered}</p>
+                <p className="font-['Outfit'] font-bold text-sm text-orange-700 mt-2">🏆 Torneos Registrados</p>
               </div>
               <div className="bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl p-6 text-center">
-                <p className="font-['Outfit'] font-black text-3xl text-purple-600">156</p>
+                <p className="font-['Outfit'] font-black text-3xl text-purple-600">{dashboardTotals.teamsTotal}</p>
                 <p className="font-['Outfit'] font-bold text-sm text-purple-700 mt-2">👥 Equipos Totales</p>
               </div>
             </div>
