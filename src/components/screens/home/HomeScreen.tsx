@@ -5,7 +5,7 @@ import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { getPersonalizedRecommendations, MatchRecommendation } from '../../../services/matchmakingService';
-import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.pn';
+import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
 
 // --- NUEVAS IMPORTACIONES DE FIREBASE ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
