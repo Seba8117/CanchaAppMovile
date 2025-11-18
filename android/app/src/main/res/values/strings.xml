@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CanchApp</string>
+    <string name="title_activity_main">CanchApp</string>
+    <string name="package_name">com.canchapp.mobile</string>
+    <string name="custom_url_scheme">com.canchapp.mobile</string>
+</resources>
