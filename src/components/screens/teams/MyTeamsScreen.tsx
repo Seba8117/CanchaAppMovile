@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Users, Crown, Settings, Search, Filter, Trash2, MoreVertical, Loader2, AlertTriangle } from 'lucide-react';
-// Removido 'notificationService' si no se usa. Añadidas importaciones de Firebase.
 import { AppHeader } from '../../common/AppHeader';
 import { TeamData } from '../../../services/teamService'; // Mantenemos tu tipo de datos
 import { auth, db } from '../../../Firebase/firebaseConfig';
@@ -8,7 +7,7 @@ import { collection, query, where, onSnapshot, DocumentData } from 'firebase/fir
 import { User as FirebaseUser } from 'firebase/auth';
 
 interface Team {
-  id: string; 
+  id: string;
   name: string;
   sport: string;
   type: 'official' | 'temporary';
@@ -74,13 +73,13 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
 
     // Consulta 1: Equipos donde soy capitán
     const qCaptain = query(
-      collection(db, "teams"), 
+      collection(db, "teams"),
       where("captainId", "==", currentUser.uid)
     );
     
     // Consulta 2: Equipos donde estoy en la lista de miembros
     const qMember = query(
-      collection(db, "teams"), 
+      collection(db, "teams"),
       where("members", "array-contains", currentUser.uid)
     );
 
@@ -115,7 +114,8 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
     name: team.name,
     sport: team.sport,
     type: team.status === 'active' ? 'official' : 'temporary' as 'official' | 'temporary',
-    currentPlayers: team.currentPlayers || team.members?.length || 0, // Usar currentPlayers o calcular por miembros
+    // CORRECCIÓN: Priorizamos team.members.length. Si members existe, usamos su largo. Si no, usamos currentPlayers o 0.
+    currentPlayers: team.members ? team.members.length : (team.currentPlayers || 0),
     maxPlayers: team.maxPlayers || 10,
     role: team.captainId === auth.currentUser?.uid ? 'captain' : 'member' as 'captain' | 'member',
     image: team.teamImage,
@@ -125,7 +125,7 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
 
   const filteredTeams = displayTeams
     .filter(team => activeTab === 'official' ? team.status === 'active' : team.status === 'inactive')
-    .filter(team => 
+    .filter(team =>
       team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       team.sport.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -152,7 +152,7 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
       key={team.id}
       className="bg-white p-4 rounded-lg border border-[rgba(23,44,68,0.1)] mb-3 relative"
     >
-      <div 
+      <div
         onClick={() => onNavigate('team-details', team)}
         className="flex items-center space-x-3 cursor-pointer active:bg-[#f8f9fa] transition-colors rounded-lg p-2 -m-2"
       >
@@ -214,7 +214,7 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
         {activeTab === 'official' ? 'No tienes equipos oficiales' : 'No tienes equipos temporales'}
       </h3>
       <p className="text-[#666666] mb-6 px-4">
-        {activeTab === 'official' 
+        {activeTab === 'official'
           ? 'Crea tu primer equipo oficial o únete a uno existente.'
           : 'Los equipos temporales se crean al unirte a partidos.'
         }
@@ -257,8 +257,8 @@ export function MyTeamsScreen({ onBack, onNavigate }: MyTeamsScreenProps) {
   return (
     <div className="bg-gradient-to-br from-[#172c44] to-[#00a884] min-h-screen pb-24">
       {/* Header */}
-      <AppHeader 
-        title="Mis Equipos" 
+      <AppHeader
+        title="Mis Equipos"
         showLogo={true}
         showBackButton={false}
         rightContent={

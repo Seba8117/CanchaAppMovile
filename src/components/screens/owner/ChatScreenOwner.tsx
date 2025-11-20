@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Send, MoreVertical, Loader2, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Send, MoreVertical, Loader2, MessageCircle, User, Calendar } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Card, CardContent } from '../../ui/card';
@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from '../../ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { AppHeader } from '../../common/AppHeader';
 
-// --- INICIO: Importaciones de Firebase (ACTUALIZADAS) ---
+// --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
 import { 
   collection, 
@@ -25,62 +25,56 @@ import {
 import { User as FirebaseUser } from 'firebase/auth';
 // --- FIN: Importaciones de Firebase ---
 
-
-interface ChatScreenProps {
+interface ChatScreenOwnerProps {
   onBack: () => void;
 }
 
-export function ChatScreen({ onBack }: ChatScreenProps) {
+export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(auth.currentUser);
-  const [userDisplayName, setUserDisplayName] = useState<string>(''); // Para guardar el nombre del usuario
+  const [userDisplayName, setUserDisplayName] = useState<string>('');
   const [chats, setChats] = useState<DocumentData[]>([]);
   const [loadingChats, setLoadingChats] = useState(true);
   const [errorChats, setErrorChats] = useState<string | null>(null);
 
   const [selectedChat, setSelectedChat] = useState<DocumentData | null>(null);
-  const [messages, setMessages] = useState<DocumentData[]>([]); // Estado para los mensajes reales
+  const [messages, setMessages] = useState<DocumentData[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   
-  const messagesEndRef = useRef<null | HTMLDivElement>(null); // Ref para auto-scroll
+  const messagesEndRef = useRef<null | HTMLDivElement>(null);
 
-  // --- Cargar Nombre del Usuario Actual ---
+  // --- 1. Cargar Nombre del Dueño ---
   useEffect(() => {
     const fetchUserName = async () => {
       if (currentUser) {
-        // Buscar en 'jugador'
-        let userDocRef = doc(db, 'jugador', currentUser.uid);
-        let userDocSnap = await getDoc(userDocRef);
-        
-        if (userDocSnap.exists()) {
-          setUserDisplayName(userDocSnap.data().name);
-          return;
+        // Prioridad: Buscar en la colección 'dueno'
+        try {
+          const ownerDocRef = doc(db, 'dueno', currentUser.uid);
+          const ownerDocSnap = await getDoc(ownerDocRef);
+          
+          if (ownerDocSnap.exists()) {
+            // Usamos el nombre del dueño o el nombre del negocio
+            setUserDisplayName(ownerDocSnap.data().ownerName || ownerDocSnap.data().businessName || 'Dueño');
+          } else {
+            setUserDisplayName(currentUser.displayName || currentUser.email || 'Dueño');
+          }
+        } catch (error) {
+          console.error("Error al obtener nombre del dueño", error);
         }
-        
-        // Si no, buscar en 'dueno'
-        userDocRef = doc(db, 'dueno', currentUser.uid);
-        userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          setUserDisplayName(userDocSnap.data().ownerName);
-          return;
-        }
-        
-        // Fallback al email
-        setUserDisplayName(currentUser.email || 'Usuario');
       }
     };
     fetchUserName();
   }, [currentUser]);
 
-  // --- Cargar Lista de Chats del Usuario ---
+  // --- 2. Cargar Chats (Donde el dueño es participante) ---
   useEffect(() => {
     if (!currentUser) {
       setLoadingChats(false);
-      setErrorChats("No estás autenticado.");
       return;
     }
 
     setLoadingChats(true);
+    // Esta consulta trae todos los chats (partidos) donde el ID del dueño está en la lista
     const q = query(
       collection(db, "chats"), 
       where("participantsUids", "array-contains", currentUser.uid)
@@ -91,27 +85,28 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
       querySnapshot.forEach((doc) => {
         chatsData.push({ id: doc.id, ...doc.data() });
       });
+      // Ordenar chats por el mensaje más reciente localmente si es necesario
+      chatsData.sort((a, b) => (b.lastMessageTimestamp?.toMillis() || 0) - (a.lastMessageTimestamp?.toMillis() || 0));
+      
       setChats(chatsData);
       setLoadingChats(false);
     }, (err) => {
-      console.error(err);
-      setErrorChats("Error al cargar tus chats.");
+      console.error("Error cargando chats:", err);
+      setErrorChats("Error al cargar tus conversaciones.");
       setLoadingChats(false);
     });
 
     return () => unsubscribe();
   }, [currentUser]);
 
-  // --- Cargar Mensajes del Chat Seleccionado ---
+  // --- 3. Cargar Mensajes del Chat Seleccionado ---
   useEffect(() => {
     if (!selectedChat) return;
 
     setLoadingMessages(true);
-    setMessages([]); // Limpiar mensajes anteriores
+    setMessages([]); 
 
-    // Crear la referencia a la subcolección 'messages'
     const messagesRef = collection(db, "chats", selectedChat.id, "messages");
-    // Crear la consulta ordenada por 'timestamp'
     const q = query(messagesRef, orderBy("timestamp", "asc"));
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -129,28 +124,25 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
     return () => unsubscribe();
   }, [selectedChat]);
 
-  // --- Auto-scroll al final de los mensajes ---
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // --- Enviar Mensaje ---
+  // --- 4. Enviar Mensaje (Como Dueño) ---
   const handleSendMessage = async () => {
-    if (newMessage.trim() === '' || !currentUser || !selectedChat) {
-      return;
-    }
+    if (newMessage.trim() === '' || !currentUser || !selectedChat) return;
 
     try {
-      // 1. Añadir el nuevo mensaje a la subcolección 'messages'
       const messagesRef = collection(db, "chats", selectedChat.id, "messages");
       await addDoc(messagesRef, {
         text: newMessage,
         senderId: currentUser.uid,
-        senderName: userDisplayName, // Usamos el nombre cargado
+        senderName: userDisplayName, // Nombre del dueño
+        role: 'owner', // Marca el mensaje como del dueño (útil para estilos futuros)
         timestamp: serverTimestamp(),
       });
 
-      // 2. Actualizar el 'lastMessage' del documento principal del chat
       const chatRef = doc(db, "chats", selectedChat.id);
       await updateDoc(chatRef, {
         lastMessage: newMessage,
@@ -164,78 +156,101 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
   };
 
   const getInitials = (name: string = '') => {
-    return name?.split(' ').map(n => n[0]).join('').toUpperCase() || '...';
+    return name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '..';
   };
 
-  // --- VISTA DE UN CHAT SELECCIONADO ---
+  // --------------------------------------------------------------------------
+  // VISTA DE UN CHAT SELECCIONADO (Estilo Dueño)
+  // --------------------------------------------------------------------------
   if (selectedChat) {
     return (
-      <div className="min-h-screen bg-gray-100 flex flex-col">
-        {/* Chat Header (Dinámico) */}
-        <div className="bg-white border-b border-gray-200 p-4">
+      <div className="min-h-screen bg-[#f8f9fa] flex flex-col font-['Outfit']">
+        {/* Header del Chat */}
+        <div className="bg-white border-b border-gray-200 p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button onClick={() => setSelectedChat(null)}>
+              <button onClick={() => setSelectedChat(null)} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
                 <ArrowLeft className="text-[#172c44]" size={24} />
               </button>
-              <Avatar className="w-10 h-10">
-                <AvatarFallback className="bg-[#f4b400] text-[#172c44]">
+              <Avatar className="w-10 h-10 border-2 border-[#f4b400]">
+                <AvatarFallback className="bg-[#f4b400] text-[#172c44] font-bold">
                   {selectedChat.type === 'match' ? '⚽' : '🏆'}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <h1 className="text-[#172c44] font-semibold">{selectedChat.name}</h1>
-                <p className="text-sm text-gray-600">{selectedChat.participantsUids?.length || 0} participantes</p>
+                <h1 className="text-[#172c44] font-bold text-lg leading-tight">{selectedChat.name}</h1>
+                <div className="flex items-center gap-1 text-xs text-gray-500 font-medium">
+                  <User size={12} />
+                  <span>{selectedChat.participantsUids?.length || 0} participantes</span>
+                </div>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="icon"><MoreVertical size={20} className="text-[#172c44]" /></Button>
-            </div>
+            <Button variant="ghost" size="icon">
+              <MoreVertical size={20} className="text-gray-500" />
+            </Button>
           </div>
         </div>
 
-        {/* Messages (Dinámico) */}
-        <div className="flex-1 p-4 space-y-4 overflow-y-auto pb-36">
+        {/* Área de Mensajes */}
+        <div className="flex-1 p-4 space-y-4 overflow-y-auto pb-24 bg-[#f0f2f5]">
           {loadingMessages && (
-            <div className="flex justify-center p-8"><Loader2 className="animate-spin text-gray-500" /></div>
+            <div className="flex justify-center p-8"><Loader2 className="animate-spin text-[#f4b400]" /></div>
           )}
+          
           {!loadingMessages && messages.map((message) => {
             const isMe = message.senderId === currentUser?.uid;
             return (
-              <div key={message.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
-                <Avatar className="w-8 h-8">
-                  <AvatarFallback className="bg-gray-200 text-[#172c44] text-xs">
+              <div key={message.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
+                {/* Avatar del remitente */}
+                <Avatar className="w-8 h-8 mt-1">
+                  <AvatarFallback className={`text-xs font-bold ${isMe ? 'bg-[#172c44] text-white' : 'bg-white text-[#172c44] border border-gray-200'}`}>
                     {getInitials(message.senderName)}
                   </AvatarFallback>
                 </Avatar>
-                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className={`p-3 rounded-lg max-w-xs ${isMe ? 'bg-[#f4b400] text-[#172c44]' : 'bg-white text-[#172c44] shadow-sm'}`}>
-                    {!isMe && (<p className="text-xs text-blue-600 mb-1 font-semibold">{message.senderName}</p>)}
-                    <p className="text-sm">{message.text}</p>
+
+                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[75%]`}>
+                  {/* Nombre del remitente (solo si no soy yo) */}
+                  {!isMe && (
+                    <span className="text-[10px] text-gray-500 ml-1 mb-0.5 font-semibold">
+                      {message.senderName}
+                    </span>
+                  )}
+                  
+                  {/* Burbuja del Mensaje */}
+                  <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${
+                    isMe 
+                      ? 'bg-[#f4b400] text-[#172c44] rounded-tr-sm' // Color Dueño: Amarillo
+                      : 'bg-white text-gray-800 rounded-tl-sm' // Color Otros: Blanco
+                  }`}>
+                    <p>{message.text}</p>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 px-1">
-                    {message.timestamp ? message.timestamp.toDate().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '...'}
-                  </p>
+                  
+                  {/* Hora */}
+                  <span className="text-[10px] text-gray-400 mt-1 px-1">
+                    {message.timestamp ? message.timestamp.toDate().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Enviando...'}
+                  </span>
                 </div>
               </div>
             );
           })}
-          {/* div vacío para el auto-scroll */}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Message Input (Fijo abajo) */}
-        <div className="fixed bottom-16 left-0 right-0 max-w-sm mx-auto bg-white border-t border-gray-200 p-4">
-          <div className="flex gap-3">
+        {/* Input de Mensaje */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-3 pb-6 md:pb-4">
+          <div className="max-w-4xl mx-auto flex gap-2 items-center">
             <Input
-              placeholder="Escribe un mensaje..."
+              placeholder="Escribe un mensaje a los jugadores..."
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              className="flex-1"
+              className="flex-1 bg-gray-50 border-gray-200 focus:ring-[#f4b400] focus:border-[#f4b400]"
             />
-            <Button onClick={handleSendMessage} className="bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44]">
-              <Send size={20} />
+            <Button 
+              onClick={handleSendMessage} 
+              className="bg-[#172c44] hover:bg-[#2a3e5a] text-white rounded-full w-10 h-10 p-0 flex items-center justify-center shadow-lg transition-transform active:scale-95"
+            >
+              <Send size={18} />
             </Button>
           </div>
         </div>
@@ -243,85 +258,120 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
     );
   }
 
-  // --- VISTA DE LA LISTA DE CHATS (DINÁMICA) ---
+  // --------------------------------------------------------------------------
+  // VISTA DE LA LISTA DE CHATS (Estilo Dashboard Dueño)
+  // --------------------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884] pb-20">
-      <AppHeader title="Mensajes" showLogo={true} showBackButton={true} onBack={onBack} />
+    <div className="min-h-screen bg-gradient-to-br from-[#f4b400] via-[#ffd54f] to-[#ffeb3b] pb-20 font-['Outfit']">
+      <AppHeader 
+        title="💬 Chats de Cancha" 
+        showLogo={true} 
+        showBackButton={true} 
+        onBack={onBack} 
+        titleClassName="text-[#172c44] font-black text-2xl"
+      />
       
       <div className="p-4">
-        <Tabs defaultValue="all">
-          <TabsList className="grid w-full grid-cols-3 mb-4">
-            <TabsTrigger value="all">Todos</TabsTrigger>
-            <TabsTrigger value="matches">Partidos</TabsTrigger>
-            <TabsTrigger value="teams">Equipos</TabsTrigger>
+        <Tabs defaultValue="all" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-4 bg-white/40 backdrop-blur-md p-1 rounded-xl">
+            <TabsTrigger 
+              value="all" 
+              className="data-[state=active]:bg-[#172c44] data-[state=active]:text-white text-[#172c44] font-semibold rounded-lg transition-all"
+            >
+              Todos
+            </TabsTrigger>
+            <TabsTrigger 
+              value="matches" 
+              className="data-[state=active]:bg-[#172c44] data-[state=active]:text-white text-[#172c44] font-semibold rounded-lg transition-all"
+            >
+              Partidos
+            </TabsTrigger>
           </TabsList>
-        </Tabs>
-      </div>
 
-      <div className="px-4 pb-4">
-        {loadingChats && (
-          <div className="flex justify-center p-8"><Loader2 className="animate-spin text-white" /></div>
-        )}
-        {errorChats && (
-          <Card className="bg-red-100 p-4"><p className="text-red-700">{errorChats}</p></Card>
-        )}
-        {!loadingChats && !errorChats && (
-          <Tabs defaultValue="all">
-            <TabsContent value="all" className="space-y-3">
-              {chats.length === 0 && (
-                <div className="text-center p-8 text-white/70">
-                  <MessageCircle size={48} className="mx-auto mb-4" />
-                  <p className="font-semibold">No estás en ningún chat todavía</p>
-                  <p className="text-sm">¡Únete a un partido o a un equipo para comenzar a chatear!</p>
+          <div className="space-y-3">
+            {loadingChats ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <Loader2 className="animate-spin text-[#172c44] mb-2" size={32} />
+                <p className="text-[#172c44] font-medium">Cargando conversaciones...</p>
+              </div>
+            ) : errorChats ? (
+              <Card className="bg-red-50 border-red-200 p-4">
+                <p className="text-red-700 text-center font-medium">{errorChats}</p>
+              </Card>
+            ) : chats.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                <div className="w-16 h-16 bg-white/30 rounded-full flex items-center justify-center mb-4 shadow-sm">
+                  <MessageCircle size={32} className="text-[#172c44]" />
                 </div>
-              )}
-              {chats.map((chat) => (
-                <Card key={chat.id} className="cursor-pointer hover:shadow-md" onClick={() => setSelectedChat(chat)}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="w-12 h-12">
-                        <AvatarFallback className="bg-[#f4b400] text-[#172c44] font-bold">
-                          {chat.type === 'match' ? '⚽' : (chat.type === 'team' ? '🏆' : '👤')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start mb-1">
-                          <h3 className="text-[#172c44] font-semibold truncate">{chat.name}</h3>
-                          {/* <span className="text-xs text-gray-500">{chat.lastMessageTimestamp?.toDate().toLocaleTimeString() || ''}</span> */}
+                <h3 className="text-[#172c44] font-bold text-lg">Sin conversaciones activas</h3>
+                <p className="text-[#172c44]/80 mt-1 max-w-xs text-sm">
+                  Los chats se crearán automáticamente cuando los jugadores reserven o se unan a partidos en tus canchas.
+                </p>
+              </div>
+            ) : (
+              <TabsContent value="all" className="mt-0 space-y-3">
+                {chats.map((chat) => (
+                  <Card 
+                    key={chat.id} 
+                    className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 bg-white/90 backdrop-blur-sm active:scale-[0.99]"
+                    onClick={() => setSelectedChat(chat)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          <Avatar className="w-14 h-14 border-2 border-white shadow-sm">
+                            <AvatarFallback className="bg-gradient-to-br from-[#172c44] to-[#2a3e5a] text-white font-bold text-lg">
+                              {chat.type === 'match' ? '⚽' : '🏆'}
+                            </AvatarFallback>
+                          </Avatar>
+                          {chat.type === 'match' && (
+                            <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-[#f4b400] rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                              <Calendar size={12} className="text-[#172c44]" />
+                            </div>
+                          )}
                         </div>
-                        <p className="text-sm text-gray-600 truncate">{chat.lastMessage}</p>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-1">
+                            <h3 className="text-[#172c44] font-bold text-base truncate pr-2">{chat.name}</h3>
+                            <span className="text-[10px] font-semibold text-gray-500 whitespace-nowrap bg-gray-100 px-2 py-0.5 rounded-full">
+                              {chat.lastMessageTimestamp ? chat.lastMessageTimestamp.toDate().toLocaleDateString('es-ES', {day: '2-digit', month: 'short'}) : ''}
+                            </span>
+                          </div>
+                          
+                          <p className={`text-sm truncate ${chat.lastMessage ? 'text-gray-600' : 'text-gray-400 italic'}`}>
+                            {chat.lastMessage || 'Aún no hay mensajes...'}
+                          </p>
+
+                          <div className="flex items-center gap-1 mt-2">
+                            <User size={12} className="text-[#f4b400]" />
+                            <span className="text-xs font-medium text-gray-500">
+                              {chat.participantsUids?.length || 0} Participantes
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </TabsContent>
+                    </CardContent>
+                  </Card>
+                ))}
+              </TabsContent>
+            )}
             
-            {/* Filtro de Partidos */}
-            <TabsContent value="matches" className="space-y-3">
-               {chats.filter(chat => chat.type === 'match').map((chat) => (
-                  <Card key={chat.id} className="cursor-pointer hover:shadow-md" onClick={() => setSelectedChat(chat)}>
-                    <CardContent className="p-4">{/* ... (renderizado similar al de 'all') ... */}</CardContent>
+            {/* Contenido duplicado para la pestaña 'matches' por simplicidad, se puede filtrar si es necesario */}
+            <TabsContent value="matches" className="mt-0 space-y-3">
+               {chats.filter(c => c.type === 'match').map(chat => (
+                  <Card key={chat.id} className="cursor-pointer border-0 bg-white/90" onClick={() => setSelectedChat(chat)}>
+                    <CardContent className="p-4">
+                       <div className="flex items-center gap-3">
+                         <Avatar><AvatarFallback className="bg-[#172c44] text-white">⚽</AvatarFallback></Avatar>
+                         <div className="flex-1"><h3 className="font-bold text-[#172c44]">{chat.name}</h3><p className="text-sm text-gray-600 truncate">{chat.lastMessage}</p></div>
+                       </div>
+                    </CardContent>
                   </Card>
                ))}
-               {chats.filter(chat => chat.type === 'match').length === 0 && (
-                 <p className="text-center text-white/70 p-8">No tienes chats de partidos.</p>
-               )}
             </TabsContent>
-            
-            {/* Filtro de Equipos */}
-            <TabsContent value="teams" className="space-y-3">
-               {chats.filter(chat => chat.type === 'team').map((chat) => (
-                  <Card key={chat.id} className="cursor-pointer hover:shadow-md" onClick={() => setSelectedChat(chat)}>
-                     <CardContent className="p-4">{/* ... (renderizado similar al de 'all') ... */}</CardContent>
-                  </Card>
-               ))}
-               {chats.filter(chat => chat.type === 'team').length === 0 && (
-                 <p className="text-center text-white/70 p-8">No tienes chats de equipos.</p>
-               )}
-            </TabsContent>
-          </Tabs>
-        )}
+          </div>
+        </Tabs>
       </div>
     </div>
   );

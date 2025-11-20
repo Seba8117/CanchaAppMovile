@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-// 1. AÑADIDO 'MessageSquare'
 import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -10,16 +9,16 @@ import { AppHeader } from '../../common/AppHeader';
 import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
 // Firebase
 import { auth, db } from '../../../Firebase/firebaseConfig';
-  import {
-    collection,
-    query,
-    where,
-    getDocs,
-    orderBy,
-    limit,
-    Timestamp,
-    onSnapshot,
-  } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  orderBy,
+  limit,
+  Timestamp,
+  onSnapshot,
+} from 'firebase/firestore';
 
 interface OwnerDashboardProps {
   onNavigate: (screen: string, data?: any) => void;
@@ -536,12 +535,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
         rightContent={
           <div className="flex items-center gap-2">
             
-            {/* --- BOTÓN DE CHAT AÑADIDO --- */}
+            {/* --- BOTÓN DE CHAT --- */}
             <Button 
               variant="outline" 
               size="sm" 
               className="text-cyan-600 border-cyan-200 bg-white/80 backdrop-blur-sm hover:bg-cyan-50 shadow-lg"
-              onClick={() => onNavigate('owner-chat')}
+              onClick={() => onNavigate('ChatScreenOwner')}
             >
               <MessageSquare size={20} />
             </Button>
@@ -654,10 +653,10 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             </CardContent>
           </Card>
 
-          {/* --- TARJETA DE CHATS (YA ESTABA AQUÍ) --- */}
+          {/* --- TARJETA DE CHATS --- */}
           <Card 
             className="bg-gradient-to-br from-cyan-500 via-blue-600 to-sky-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2"
-            onClick={() => onNavigate('owner-chat')} // Navega a la pantalla de chat del dueño
+            onClick={() => onNavigate('ChatScreenOwner')} // Navega a ChatScreenOwner.tsx
           >
             <CardContent className="p-5 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
@@ -780,7 +779,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                       <div className="text-right">
                         <p className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                           ${booking.amount.toLocaleString()}
-                        </p> {/* <-- CORRECCIÓN AQUÍ */}
+                        </p> 
                         <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">COP</p>
                         
                         {/* Estado de la reserva */}
