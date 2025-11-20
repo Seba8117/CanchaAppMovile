@@ -45,6 +45,32 @@ export function CreateTournamentScreen({ onBack, onNavigate }: CreateTournamentS
   const [availableCourts, setAvailableCourts] = useState<Court[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#f4b400] via-[#f4b400] to-[#e6a200]">
+      <AppHeader 
+        title="Crear Torneo" 
+        leftContent={
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft size={20} />
+          </Button>
+        }
+      />
+
+      <div className="p-4 pb-20 space-y-6">
+        <div className="flex flex-col items-center text-center mb-2">
+          <h2 className="text-[#172c44] text-2xl font-bold">🏆 Torneos</h2>
+          <p className="text-[#172c44]/70 text-sm mt-1">Próximamente</p>
+        </div>
+
+        <Card className="bg-white/90 backdrop-blur-sm rounded-2xl">
+          <CardContent className="p-6 text-center space-y-2">
+            <p className="text-[#172c44] font-semibold">Estamos trabajando en esta sección</p>
+            <p className="text-[#172c44] text-sm">Pronto podrás crear torneos desde aquí</p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 
   useEffect(() => {
     const fetchOwnerCourts = async () => {

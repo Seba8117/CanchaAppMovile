@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Calendar, Users, Clock, Star, Plus, Loader2, AlertTriangle, MessageCircle } from 'lucide-react'; // Ícono de chat añadido
+import { MapPin, Calendar, Users, Clock, Star, Plus, Loader2, AlertTriangle, MessageCircle } from 'lucide-react';
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { getPersonalizedRecommendations, MatchRecommendation } from '../../../services/matchmakingService';
 import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
+import { getUserLocationCached, haversineKm } from '../../../services/locationService';
 
 interface HomeScreenProps {
   onNavigate: (screen: string, data?: any) => void;
@@ -14,9 +15,18 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
   const [recommendations, setRecommendations] = useState<MatchRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     loadRecommendations();
+  }, []);
+
+  useEffect(() => {
+    const getLoc = async () => {
+      const loc = await getUserLocationCached();
+      setUserLocation(loc);
+    };
+    getLoc();
   }, []);
 
   const loadRecommendations = async () => {
@@ -66,6 +76,22 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
     }).format(price);
   };
 
+  const enhanceWithDistance = (items: MatchRecommendation[]) => {
+    if (!userLocation) return items;
+    const mapped = items.map((r) => {
+      const m: any = r.match || {};
+      const lc = m.location;
+      const coords = lc && typeof lc.lat === 'number' && typeof lc.lng === 'number' ? { lat: lc.lat, lng: lc.lng } : null;
+      const distance = coords ? `${haversineKm(userLocation, coords).toFixed(1)} km` : 'N/A';
+      return { ...r, match: { ...m, distance } } as any;
+    });
+    return mapped.sort((a: any, b: any) => {
+      const da = a.match?.distance?.endsWith(' km') ? parseFloat(a.match.distance) : Number.POSITIVE_INFINITY;
+      const db = b.match?.distance?.endsWith(' km') ? parseFloat(b.match.distance) : Number.POSITIVE_INFINITY;
+      return da - db;
+    });
+  };
+
   return (
     <div className="p-4 pb-32 bg-gradient-to-br from-[#172c44] to-[#00a884] min-h-screen">
       <div className="flex items-center justify-between mb-6">
@@ -96,13 +122,14 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
       <div className="mb-6">
         <div className="flex items-center gap-2 p-3 bg-white rounded-lg shadow-sm">
           <MapPin className="text-[#00a884]" size={20} />
-          <span className="text-gray-700">Santiago Centro, Chile</span>
+          <span className="text-gray-700">{userLocation ? `${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}` : 'Ubicación no disponible'}</span>
           <Button 
             variant="ghost" 
             size="sm"
             className="ml-auto text-[#f4b400]"
+            onClick={async () => { const loc = await getUserLocationCached(0); setUserLocation(loc); }}
           >
-            Cambiar
+            Actualizar ubicación
           </Button>
         </div>
       </div>
@@ -145,7 +172,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
         </Card>
       ) : (
         <div className="space-y-4">
-          {recommendations.map((recommendation) => {
+          {enhanceWithDistance(recommendations).map((recommendation: any) => {
             const match = recommendation.match;
             return (
               <Card 
@@ -177,6 +204,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
                     <div className="flex items-center gap-1">
                       <MapPin size={14} />
                       <span>{match.location?.address || 'Ubicación no disponible'}</span>
+                      <span>{match.distance || 'N/A'}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar size={14} />

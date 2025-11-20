@@ -210,6 +210,32 @@ npx cap clean android
 - **Documentación Firebase:** `FIREBASE_INTEGRATION_GUIDE.md`
 - **Guidelines de Desarrollo:** `src/guidelines/Guidelines.md`
 
+## 👥 Gestión de Equipos
+
+- Crear partidos asociados a un equipo:
+  - Ir a `Crear Partido`.
+  - Seleccionar deporte y cancha.
+  - Activar `Incluir mi equipo oficial` si eres capitán.
+  - Publicar; se crea el partido y un chat con participantes del equipo y el dueño de la cancha.
+- Ver integrantes del equipo:
+  - Ir a `Mis Equipos` y abrir un equipo.
+  - La pestaña `Jugadores` muestra miembros con datos básicos y etiquetas de capitán.
+- Funciones del capitán/dueño:
+  - Eliminar integrantes desde `Detalles del Equipo` usando el icono de papelera.
+  - Acceso al chat de dueño desde el `Dashboard` del dueño.
+- Accesibilidad y estados:
+  - Las pantallas muestran carga y errores cuando Firestore no está disponible.
+  - Las vistas no quedan en blanco; se presentan mensajes y acciones de retorno.
+
+## ✅ Pruebas de Roles y Permisos
+
+- Ejecución:
+  - `npm test`
+- Cobertura:
+  - Render de `TeamDetailsScreen` con datos en tiempo real y miembros.
+  - Listado en `MyTeamsScreen` para usuario capitán y miembro.
+  - Validación básica de accesos según rol.
+
 ## 🤝 Contribuir
 
 1. Fork el proyecto

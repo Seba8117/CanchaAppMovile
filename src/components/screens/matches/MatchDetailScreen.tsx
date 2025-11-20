@@ -1,8 +1,11 @@
-import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
+import { useEffect, useState } from 'react';
+import { getMatchById } from '../../../services/matchService';
+import { getUserLocationCached, haversineKm, mapsUrlFor } from '../../../services/locationService';
 
 interface MatchDetailScreenProps {
   match: any;
@@ -12,18 +15,88 @@ interface MatchDetailScreenProps {
 }
 
 export function MatchDetailScreen({ match, onBack, onNavigate, userType }: MatchDetailScreenProps) {
-  const players = [
-    { id: 1, name: 'Juan Pérez', position: 'Capitán', rating: 4.8, avatar: 'JP' },
-    { id: 2, name: 'María González', position: 'Defensa', rating: 4.5, avatar: 'MG' },
-    { id: 3, name: 'Carlos Silva', position: 'Medio', rating: 4.7, avatar: 'CS' },
-    { id: 4, name: 'Ana Torres', position: 'Delantera', rating: 4.9, avatar: 'AT' },
-    { id: 5, name: 'Luis Morales', position: 'Portero', rating: 4.6, avatar: 'LM' },
-    { id: 6, name: 'Sofia Ruiz', position: 'Medio', rating: 4.4, avatar: 'SR' },
-    { id: 7, name: 'Diego Fernández', position: 'Defensa', rating: 4.8, avatar: 'DF' },
-  ];
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<any>(match || null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [lastClickTs, setLastClickTs] = useState<number>(0);
+
+  useEffect(() => {
+    const mustFetch = !!match?.id && (!match?.courtName || !match?.players);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const fresh = await getMatchById(match.id);
+        setData(fresh || match);
+      } catch (err: any) {
+        setError(err.message || 'No se pudo cargar el partido.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (mustFetch) fetchData();
+    else setData(match);
+  }, [match?.id]);
+
+  useEffect(() => {
+    const getLoc = async () => {
+      const loc = await getUserLocationCached();
+      setUserLocation(loc);
+    };
+    getLoc();
+  }, []);
+
+  const handleViewAllClick = () => {
+    const now = Date.now();
+    if (now - lastClickTs < 600) return;
+    setLastClickTs(now);
+    if (onNavigate) onNavigate('match-players', data);
+  };
+
+  const toDate = (d: any) => {
+    try {
+      if (!d) return null;
+      if (typeof d?.toDate === 'function') return d.toDate();
+      if (typeof d?.toMillis === 'function') return new Date(d.toMillis());
+      if (typeof d === 'string') return new Date(d);
+      if (d instanceof Date) return d;
+      return null;
+    } catch { return null; }
+  };
+  const formatCLP = (n: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(n || 0);
+  const locationText = (loc: any) => {
+    if (!loc) return 'Ubicación no especificada';
+    if (typeof loc === 'string') return loc;
+    if (typeof loc?.address === 'string') return loc.address;
+    return 'Ubicación no especificada';
+  };
+  const playersArray: string[] = Array.isArray(data?.players) ? data.players : [];
+  const currentPlayers = Number(data?.currentPlayers || playersArray.length || 0);
+  const maxPlayers = Number(data?.maxPlayers || 0);
+  const matchDate = toDate(data?.date);
+  const teamIncluded = !!data?.teamId && !!data?.teamName;
+  const pricePerPlayer = Number(data?.pricePerPlayer || data?.price || 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884]">
+      {loading && (
+        <div className="fixed inset-0 flex items-center justify-center">
+          <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 text-center shadow">
+            <Loader2 className="h-8 w-8 animate-spin text-[#172c44] mx-auto mb-2" />
+            <p className="text-[#172c44] font-semibold">Cargando partido...</p>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="fixed inset-0 flex items-center justify-center">
+          <div className="bg-red-50 rounded-xl p-6 text-center border border-red-200">
+            <AlertCircle className="h-8 w-8 text-red-600 mx-auto mb-2" />
+            <p className="text-red-700 font-semibold">{error}</p>
+            <Button variant="outline" className="mt-3" onClick={onBack}>Volver</Button>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="bg-white">
         <div className="flex items-center justify-between p-4">
@@ -48,17 +121,15 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
           <CardContent className="p-6">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <Badge className="bg-[#f4b400] text-[#172c44] mb-2">
-                  {match.sport}
-                </Badge>
-                <h2 className="text-[#172c44] mb-1">{match.location}</h2>
+                <Badge className="bg-[#f4b400] text-[#172c44] mb-2">{String(data?.sport || 'Deporte')}</Badge>
+                <h2 className="text-[#172c44] mb-1">{locationText(data?.location)}</h2>
                 <div className="flex items-center gap-1">
                   <Star className="text-[#f4b400]" size={14} fill="currentColor" />
-                  <span className="text-sm text-gray-600">{match.rating} • Cancha verificada</span>
+                  <span className="text-sm text-gray-600">{String(data?.rating || 'N/A')} • Cancha verificada</span>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl text-[#00a884] mb-1">{match.price}</p>
+                <p className="text-2xl text-[#00a884] mb-1">{formatCLP(pricePerPlayer)}</p>
                 <p className="text-sm text-gray-600">por jugador</p>
               </div>
             </div>
@@ -66,19 +137,19 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="flex items-center gap-2">
                 <Calendar className="text-[#172c44]" size={16} />
-                <span className="text-sm">{match.date}</span>
+                <span className="text-sm">{matchDate ? matchDate.toLocaleDateString() : 'Fecha no definida'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="text-[#172c44]" size={16} />
-                <span className="text-sm">{match.time}</span>
+                <span className="text-sm">{String(data?.time || 'Hora no definida')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <MapPin className="text-[#172c44]" size={16} />
-                <span className="text-sm">{match.distance}</span>
+                <span className="text-sm">{String(data?.courtName || 'Cancha')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Users className="text-[#172c44]" size={16} />
-                <span className="text-sm">{match.totalPlayers - match.playersNeeded}/{match.totalPlayers}</span>
+                <span className="text-sm">{currentPlayers}/{maxPlayers || 'N/A'}</span>
               </div>
             </div>
 
@@ -102,7 +173,7 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <p className="text-[#172c44]">{match.captain}</p>
+                <p className="text-[#172c44]">{String(data?.captainName || 'Capitán Anónimo')}</p>
                 <div className="flex items-center gap-1">
                   <Star className="text-[#f4b400]" size={12} fill="currentColor" />
                   <span className="text-sm text-gray-600">4.8 • 127 partidos</span>
@@ -122,13 +193,16 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               <h3 className="text-[#172c44]">Jugadores Confirmados</h3>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="bg-[#00a884] text-white">
-                  {players.length}/{match.totalPlayers}
+                  {currentPlayers}/{maxPlayers || 'N/A'}
                 </Badge>
                 {userType === 'player' && onNavigate && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onNavigate('match-players', match)}
+                    aria-label="Ver todos los jugadores"
+                    tabIndex={0}
+                    onClick={handleViewAllClick}
+                    onTouchStart={handleViewAllClick}
                     className="text-[#172c44] border-[#172c44] hover:bg-[#172c44] hover:text-white"
                   >
                     <Eye size={14} className="mr-1" />
@@ -138,28 +212,31 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               </div>
             </div>
             <div className="space-y-3">
-              {players.map((player) => (
-                <div key={player.id} className="flex items-center gap-3">
-                  <Avatar className="w-10 h-10">
-                    <AvatarFallback className="bg-gray-200 text-[#172c44] text-sm">
-                      {player.avatar}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <p className="text-sm text-[#172c44]">{player.name}</p>
-                    <p className="text-xs text-gray-600">{player.position}</p>
+              {playersArray.length > 0 ? (
+                playersArray.map((playerId) => (
+                  <div key={playerId} className="flex items-center gap-3">
+                    <Avatar className="w-10 h-10">
+                      <AvatarFallback className="bg-gray-200 text-[#172c44] text-sm">
+                        {String(playerId).substring(0,2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <p className="text-sm text-[#172c44]">Jugador</p>
+                      <p className="text-xs text-gray-600">ID: {String(playerId)}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Star className="text-[#f4b400]" size={12} fill="currentColor" />
+                      <span className="text-xs text-gray-600">4.5</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Star className="text-[#f4b400]" size={12} fill="currentColor" />
-                    <span className="text-xs text-gray-600">{player.rating}</span>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="text-center py-6 text-gray-600">No hay jugadores confirmados aún.</div>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Location */}
         <Card>
           <CardContent className="p-4">
             <h3 className="text-[#172c44] mb-3">Ubicación</h3>
@@ -167,11 +244,23 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               <p className="text-gray-500">Mapa de la cancha</p>
             </div>
             <p className="text-sm text-gray-700 mb-2">
-              Av. Los Leones 1234, Providencia, Santiago
+              {(() => {
+                const loc = data?.location;
+                if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+                  return `${loc.lat}, ${loc.lng}`;
+                }
+                return locationText(loc);
+              })()}
             </p>
-            <Button variant="outline" size="sm" className="w-full">
-              Abrir en Google Maps
-            </Button>
+            {(() => {
+              const loc = data?.location;
+              if (userLocation && loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+                const km = haversineKm(userLocation, { lat: loc.lat, lng: loc.lng });
+                return <p className="text-sm text-gray-600 mb-2">Distancia: {km.toFixed(1)} km</p>;
+              }
+              return null;
+            })()}
+            <Button variant="outline" size="sm" className="w-full" onClick={() => window.open(mapsUrlFor(data), '_blank')}>Abrir en Google Maps</Button>
           </CardContent>
         </Card>
       </div>
@@ -181,7 +270,7 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
         <Button 
           className="w-full bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] h-12"
         >
-          Unirse al Partido - {match.price}
+          Unirse al Partido - {formatCLP(pricePerPlayer)}
         </Button>
       </div>
     </div>

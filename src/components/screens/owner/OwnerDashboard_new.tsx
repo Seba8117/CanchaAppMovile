@@ -126,6 +126,8 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     }
   };
 
+  const formatCLP = (amount: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(Number(amount) || 0);
+
   const getStatusText = (status: string) => {
     switch (status) {
       case 'available': return 'Activo';
@@ -357,9 +359,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                       </div>
                       <div className="text-right">
                         <p className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                          ${booking.amount.toLocaleString()}
+                          {formatCLP(booking.amount)}
                         </p>
-                        <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">COP</p>
+                        <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">CLP</p>
                       </div>
                     </div>
                   </CardContent>
@@ -497,118 +499,16 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
           {/* Tournaments Tab */}
           <TabsContent value="tournaments" className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">🏆 Torneos Épicos</h2>
-                <p className="font-['Outfit'] font-medium text-sm text-slate-500 mt-1">Crea competencias inolvidables</p>
-              </div>
-              <Button 
-                size="sm" 
-                className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-['Outfit'] font-bold shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl px-6"
-                onClick={() => onNavigate('create-tournament')}
-              >
-                <Plus size={20} className="mr-2" />
-                Nuevo Torneo
-              </Button>
+            <div className="flex flex-col items-center text-center mb-6">
+              <h2 className="font-['Outfit'] font-black text-2xl bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">🏆 Torneos</h2>
+              <p className="font-['Outfit'] font-medium text-sm text-slate-500 mt-1">Proximamente</p>
             </div>
-
-            <div className="space-y-6">
-              {tournaments.map((tournament, index) => (
-                <Card key={tournament.id} className="bg-gradient-to-br from-white via-orange-50/30 to-amber-50/30 backdrop-blur-sm shadow-xl hover:shadow-2xl border-0 transform hover:-translate-y-2 transition-all duration-300 rounded-2xl overflow-hidden">
-                  <CardContent className="p-6 relative">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-400/20 to-orange-400/20 rounded-bl-3xl flex items-end justify-start p-4">
-                      <Trophy size={28} className="text-amber-600" />
-                    </div>
-
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400"></div>
-
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex-1 pr-6">
-                        <div className="flex items-center gap-3 mb-3">
-                          <h3 className="font-['Outfit'] font-black text-xl text-slate-800">{tournament.name}</h3>
-                          <Badge className={`text-xs font-['Outfit'] font-bold px-3 py-1 rounded-full ${getStatusColor(tournament.status)} shadow-md`}>
-                            {getStatusText(tournament.status)}
-                          </Badge>
-                        </div>
-                        
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                          <div className="text-center bg-white/70 rounded-lg p-3">
-                            <p className="font-['Outfit'] font-black text-lg text-orange-600">
-                              {tournament.sport === 'Fútbol' ? '⚽' : tournament.sport === 'Básquetball' ? '🏀' : '🎾'}
-                            </p>
-                            <p className="font-['Outfit'] font-semibold text-xs text-slate-600">{tournament.sport}</p>
-                          </div>
-                          <div className="text-center bg-white/70 rounded-lg p-3">
-                            <p className="font-['Outfit'] font-black text-lg text-emerald-600">{tournament.participants}</p>
-                            <p className="font-['Outfit'] font-semibold text-xs text-slate-600">Equipos</p>
-                          </div>
-                          <div className="text-center bg-white/70 rounded-lg p-3">
-                            <p className="font-['Outfit'] font-black text-lg text-indigo-600">📅</p>
-                            <p className="font-['Outfit'] font-semibold text-xs text-slate-600">{tournament.startDate}</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <div className="bg-gradient-to-br from-amber-100 to-orange-100 rounded-2xl p-4 mb-3">
-                          <p className="font-['Outfit'] font-black text-2xl bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
-                            ${tournament.prize.toLocaleString()}
-                          </p>
-                          <p className="font-['Outfit'] font-bold text-xs text-amber-700">PREMIO TOTAL</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-between items-center pt-4 border-t border-amber-100">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-100 to-teal-100 rounded-full px-3 py-1">
-                          <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                          <span className="font-['Outfit'] font-bold text-sm text-emerald-700">
-                            🔥 {tournament.status === 'active' ? 'En Progreso' : 'Inscripciones Abiertas'}
-                          </span>
-                        </div>
-                        {tournament.status === 'active' && (
-                          <div className="bg-gradient-to-r from-orange-100 to-amber-100 rounded-full px-3 py-1">
-                            <span className="font-['Outfit'] font-bold text-xs text-orange-700">FASE: Octavos</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex gap-3">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-['Outfit'] font-semibold rounded-xl px-4"
-                          onClick={() => onNavigate('tournament-management', tournament)}
-                        >
-                          👁️ Ver Detalles
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          className="border-orange-200 text-orange-700 hover:bg-orange-50 font-['Outfit'] font-semibold rounded-xl px-4"
-                          onClick={() => onNavigate('tournament-management', tournament)}
-                        >
-                          ⚙️ Gestionar
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {/* Tournament Stats */}
-            <div className="grid grid-cols-2 gap-4 mt-8">
-              <div className="bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl p-6 text-center">
-                <p className="font-['Outfit'] font-black text-3xl text-orange-600">24</p>
-                <p className="font-['Outfit'] font-bold text-sm text-orange-700 mt-2">🏆 Torneos Completados</p>
-              </div>
-              <div className="bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl p-6 text-center">
-                <p className="font-['Outfit'] font-black text-3xl text-purple-600">156</p>
-                <p className="font-['Outfit'] font-bold text-sm text-purple-700 mt-2">👥 Equipos Totales</p>
-              </div>
-            </div>
+            <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl">
+              <CardContent className="p-6 text-center space-y-2">
+                <p className="font-['Outfit'] font-bold text-lg text-slate-800">Estamos trabajando en esta sección</p>
+                <p className="font-['Outfit'] text-sm text-slate-600">Pronto podrás crear y gestionar torneos desde aquí</p>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

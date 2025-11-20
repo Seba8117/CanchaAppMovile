@@ -12,108 +12,9 @@ interface TournamentsScreenProps {
 }
 
 export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: TournamentsScreenProps) {
-  // Diferentes torneos según el tipo de usuario
-  const playerTournaments = [
-    {
-      id: 1,
-      name: 'Copa de Fútbol Santiago',
-      sport: 'Fútbol',
-      prize: '$50.000',
-      teams: 16,
-      registeredTeams: 12,
-      format: 'Eliminación directa',
-      startDate: '25 Sep 2024',
-      endDate: '15 Oct 2024',
-      location: 'Múltiples canchas',
-      registrationDeadline: '20 Sep 2024',
-      status: 'Inscripciones abiertas',
-      organizer: 'Liga Deportiva Santiago',
-      description: 'El torneo de fútbol más grande de Santiago. 16 equipos compitiendo por el título.'
-    },
-    {
-      id: 2,
-      name: 'Torneo de Básquetball',
-      sport: 'Básquetball',
-      prize: '$30.000',
-      teams: 8,
-      registeredTeams: 6,
-      format: 'Round Robin',
-      startDate: '30 Sep 2024',
-      endDate: '10 Oct 2024',
-      location: 'Polideportivo Central',
-      registrationDeadline: '25 Sep 2024',
-      status: 'Inscripciones abiertas',
-      organizer: 'Club Básquetball Pro',
-      description: 'Torneo de básquetball 3x3. Formato round robin con playoffs.'
-    },
-    {
-      id: 3,
-      name: 'Liga de Tenis Mixto',
-      sport: 'Tenis',
-      prize: '$20.000',
-      teams: 12,
-      registeredTeams: 8,
-      format: 'Liga',
-      startDate: '05 Oct 2024',
-      endDate: '25 Oct 2024',
-      location: 'Club de Tenis Las Condes',
-      registrationDeadline: '28 Sep 2024',
-      status: 'Próximamente',
-      organizer: 'Federación de Tenis Amateur',
-      description: 'Liga de tenis en parejas mixtas. Todos los niveles bienvenidos.'
-    }
-  ];
+  const playerTournaments: any[] = [];
 
-  const ownerTournaments = [
-    {
-      id: 1,
-      name: 'Copa Primavera 2024',
-      sport: 'Fútbol',
-      prize: '$500.000',
-      teams: 16,
-      registeredTeams: 12,
-      format: 'Eliminación Simple',
-      startDate: '15 Mar 2024',
-      endDate: '17 Mar 2024',
-      location: 'Mis Canchas',
-      registrationDeadline: '10 Mar 2024',
-      status: 'En curso',
-      organizer: 'Mi Complejo Deportivo',
-      description: 'Torneo de fútbol organizado en nuestras instalaciones. Gran participación.'
-    },
-    {
-      id: 2,
-      name: 'Torneo Básquetball Amateur',
-      sport: 'Básquetball',
-      prize: '$300.000',
-      teams: 8,
-      registeredTeams: 8,
-      format: 'Round Robin',
-      startDate: '25 Mar 2024',
-      endDate: '27 Mar 2024',
-      location: 'Cancha Básquetball',
-      registrationDeadline: '20 Mar 2024',
-      status: 'Inscripciones abiertas',
-      organizer: 'Mi Complejo Deportivo',
-      description: 'Torneo de básquetball 3x3 en nuestras modernas instalaciones.'
-    },
-    {
-      id: 3,
-      name: 'Copa de Tenis Mixto',
-      sport: 'Tenis',
-      prize: '$200.000',
-      teams: 12,
-      registeredTeams: 7,
-      format: 'Liga',
-      startDate: '05 Abr 2024',
-      endDate: '15 Abr 2024',
-      location: 'Canchas de Tenis',
-      registrationDeadline: '01 Abr 2024',
-      status: 'Finalizado',
-      organizer: 'Mi Complejo Deportivo',
-      description: 'Torneo de tenis en parejas mixtas con gran éxito de participación.'
-    }
-  ];
+  const ownerTournaments: any[] = [];
 
   const tournaments = userType === 'owner' ? ownerTournaments : playerTournaments;
 
@@ -187,14 +88,19 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
         />
 
         <div className="p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className={userType === 'owner' ? 'text-[#172c44]' : 'text-white'}>
-              {userType === 'owner' ? 'Mis Torneos' : 'Torneos Disponibles'}
-            </h2>
-            <span className={`text-sm ${userType === 'owner' ? 'text-[#172c44]/60' : 'text-[#172c44]'}`}>{tournaments.length} torneos</span>
+          <div className="flex flex-col items-center text-center mb-6">
+            <h2 className={userType === 'owner' ? "font-['Outfit'] font-black text-2xl bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent" : 'text-white text-xl font-bold'}>🏆 Torneos</h2>
+            <p className={userType === 'owner' ? "font-['Outfit'] font-medium text-sm text-[#172c44]/70 mt-1" : 'text-white/80 text-sm mt-1'}>Próximamente</p>
           </div>
 
-          <div className="space-y-4">
+          <Card className={userType === 'owner' ? 'bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl' : 'bg-white/90 backdrop-blur-sm rounded-2xl'}>
+            <CardContent className="p-6 text-center space-y-2">
+              <p className={userType === 'owner' ? "font-['Outfit'] font-bold text-lg text-slate-800" : 'text-[#172c44] font-semibold'}>Estamos trabajando en esta sección</p>
+              <p className={userType === 'owner' ? "font-['Outfit'] text-sm text-slate-600" : 'text-[#172c44] text-sm'}>Pronto podrás crear y gestionar torneos desde aquí</p>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4 hidden">
             {tournaments.map((tournament) => (
               <Card key={tournament.id} className={`cursor-pointer transition-all ${
                 userType === 'owner' 

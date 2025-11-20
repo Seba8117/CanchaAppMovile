@@ -125,8 +125,14 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
 
     try {
       // 3. Preparar el objeto de datos que se guardará en Firebase
+      const orderedAvailability = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].reduce((acc: any, key) => {
+        const v = (formData.availability as any)[key] || { enabled: false };
+        acc[key] = v;
+        return acc;
+      }, {} as any);
       const courtData = {
         ...formData,
+        availability: orderedAvailability,
         pricePerHour: Number(formData.pricePerHour), // Convertir a tipo número
         capacity: Number(formData.capacity) || 0, // Convertir a número o establecer 0 si está vacío
         ownerId: currentUser.uid, // ¡Asocia la cancha al dueño!

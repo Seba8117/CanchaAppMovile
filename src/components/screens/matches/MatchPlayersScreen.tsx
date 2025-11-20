@@ -1,9 +1,12 @@
-import { ArrowLeft, Star, AlertTriangle, Users, Shield } from 'lucide-react';
+import { ArrowLeft, Star, AlertTriangle, Users, Shield, Loader2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
+import { useEffect, useRef, useState } from 'react';
+import { db } from '../../../Firebase/firebaseConfig';
+import { collection, documentId, getDocs, query, where } from 'firebase/firestore';
 
 interface MatchPlayersScreenProps {
   match: any;
@@ -13,23 +16,53 @@ interface MatchPlayersScreenProps {
 }
 
 export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: MatchPlayersScreenProps) {
-  const myTeam = [
-    { id: 1, name: 'Juan Pérez', position: 'Capitán', rating: 4.8, avatar: 'JP', isCaptain: true },
-    { id: 2, name: 'María González', position: 'Defensa', rating: 4.5, avatar: 'MG', isCaptain: false },
-    { id: 3, name: 'Carlos Silva', position: 'Medio', rating: 4.7, avatar: 'CS', isCaptain: false },
-    { id: 4, name: 'Ana Torres', position: 'Delantera', rating: 4.9, avatar: 'AT', isCaptain: false },
-    { id: 5, name: 'Luis Morales', position: 'Portero', rating: 4.6, avatar: 'LM', isCaptain: false },
-    { id: 6, name: 'Sofia Ruiz', position: 'Medio', rating: 4.4, avatar: 'SR', isCaptain: false },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [visibleCount, setVisibleCount] = useState(50);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const startTs = useRef<number>(performance.now());
 
-  const rivalTeam = [
-    { id: 7, name: 'Diego Fernández', position: 'Capitán', rating: 4.8, avatar: 'DF', isCaptain: true },
-    { id: 8, name: 'Carmen López', position: 'Defensa', rating: 4.3, avatar: 'CL', isCaptain: false },
-    { id: 9, name: 'Roberto Castro', position: 'Medio', rating: 4.6, avatar: 'RC', isCaptain: false },
-    { id: 10, name: 'Elena Vega', position: 'Delantera', rating: 4.7, avatar: 'EV', isCaptain: false },
-    { id: 11, name: 'Miguel Santos', position: 'Portero', rating: 4.5, avatar: 'MS', isCaptain: false },
-    { id: 12, name: 'Patricia Herrera', position: 'Medio', rating: 4.4, avatar: 'PH', isCaptain: false },
-  ];
+  useEffect(() => {
+    const loadPlayers = async () => {
+      try {
+        setError(null);
+        const ids: string[] = Array.isArray(match?.players) ? match.players : [];
+        if (ids.length === 0) {
+          setPlayers([]);
+          return;
+        }
+        const chunks: string[][] = [];
+        for (let i = 0; i < ids.length; i += 10) chunks.push(ids.slice(i, i + 10));
+        const results: any[] = [];
+        for (const chunk of chunks) {
+          const q = query(collection(db, 'jugador'), where(documentId(), 'in', chunk));
+          const snap = await getDocs(q);
+          snap.docs.forEach(d => results.push({ id: d.id, ...d.data() }));
+        }
+        setPlayers(results);
+      } catch (err: any) {
+        setError('No se pudieron cargar los jugadores.');
+      } finally {
+        setLoading(false);
+        const duration = performance.now() - startTs.current;
+        console.log(`[MatchPlayersScreen] loaded in ${Math.round(duration)}ms, players=${players.length}`);
+      }
+    };
+    loadPlayers();
+  }, [match?.id]);
+
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (entry.isIntersecting) {
+        setVisibleCount((c) => c + 50);
+      }
+    });
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [sentinelRef.current]);
 
   const handleReportPlayer = (player: any) => {
     onNavigate('report-player', { player, match });
@@ -42,7 +75,7 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
           <div className="relative">
             <Avatar className="w-12 h-12">
               <AvatarFallback className={`${isMyTeam ? 'bg-[#00a884]' : 'bg-[#172c44]'} text-white`}>
-                {player.avatar}
+                {(player.displayName || player.name || player.email || 'US')[0]}
               </AvatarFallback>
             </Avatar>
             {player.isCaptain && (
@@ -53,17 +86,17 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <p className="text-[#172c44]">{player.name}</p>
+              <p className="text-[#172c44]">{player.displayName || player.name || player.email || 'Usuario'}</p>
               {player.isCaptain && (
                 <Badge variant="outline" className="text-xs border-[#f4b400] text-[#f4b400]">
                   Capitán
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-gray-600">{player.position}</p>
+            <p className="text-sm text-gray-600">{player.favoritePosition || 'Jugador'}</p>
             <div className="flex items-center gap-1">
               <Star className="text-[#f4b400]" size={12} fill="currentColor" />
-              <span className="text-xs text-gray-600">{player.rating}</span>
+              <span className="text-xs text-gray-600">{player.rating || '4.5'}</span>
             </div>
           </div>
           {userType === 'player' && !isMyTeam && (
@@ -102,15 +135,15 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
             <div className="flex items-center justify-between">
               <div>
                 <Badge className="bg-[#f4b400] text-[#172c44] mb-2">
-                  {match.sport}
+                  {String(match?.sport || 'Deporte')}
                 </Badge>
-                <CardTitle className="text-[#172c44] text-lg">{match.location}</CardTitle>
-                <p className="text-sm text-gray-600">{match.date} • {match.time}</p>
+                <CardTitle className="text-[#172c44] text-lg">{typeof match?.location === 'object' ? match?.location?.address || 'Ubicación no especificada' : String(match?.location || 'Ubicación no especificada')}</CardTitle>
+                <p className="text-sm text-gray-600">{(match?.date?.toDate ? match.date.toDate().toLocaleDateString() : String(match?.date || 'Fecha'))} • {String(match?.time || 'Hora')}</p>
               </div>
               <div className="text-right">
                 <div className="flex items-center gap-2 text-[#00a884]">
                   <Users size={16} />
-                  <span>{myTeam.length + rivalTeam.length} jugadores</span>
+                  <span>{players.length} jugadores</span>
                 </div>
               </div>
             </div>
@@ -118,46 +151,29 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
         </Card>
 
         {/* Players Tabs */}
-        <Tabs defaultValue="my-team" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="my-team" className="flex items-center gap-2">
+        <Tabs defaultValue="all" className="w-full">
+          <TabsList className="grid w-full grid-cols-1 mb-6">
+            <TabsTrigger value="all" className="flex items-center gap-2">
               <div className="w-3 h-3 bg-[#00a884] rounded-full"></div>
-              Mi Equipo ({myTeam.length})
-            </TabsTrigger>
-            <TabsTrigger value="rival-team" className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-[#172c44] rounded-full"></div>
-              Equipo Rival ({rivalTeam.length})
+              Todos ({players.length})
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="my-team" className="space-y-0">
-            <div className="mb-4">
-              <h3 className="text-[#172c44] mb-3 flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#00a884] rounded-full"></div>
-                Tu Equipo
-              </h3>
-              {userType === 'player' && (
-                <p className="text-sm text-gray-600 mb-4">
-                  Estos son tus compañeros de equipo para este partido.
-                </p>
-              )}
-            </div>
-            {myTeam.map((player) => renderPlayerCard(player, true))}
-          </TabsContent>
-
-          <TabsContent value="rival-team" className="space-y-0">
-            <div className="mb-4">
-              <h3 className="text-[#172c44] mb-3 flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#172c44] rounded-full"></div>
-                Equipo Rival
-              </h3>
-              {userType === 'player' && (
-                <p className="text-sm text-gray-600 mb-4">
-                  Conoce a tus oponentes. Puedes reportar comportamientos inapropiados.
-                </p>
-              )}
-            </div>
-            {rivalTeam.map((player) => renderPlayerCard(player, false))}
+          <TabsContent value="all" className="space-y-0">
+            {loading && (
+              <div className="space-y-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="animate-pulse bg-white/40 h-16 rounded-md" />
+                ))}
+              </div>
+            )}
+            {!loading && error && (
+              <div className="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+            {!loading && !error && players.slice(0, visibleCount).map((player) => renderPlayerCard(player, true))}
+            <div ref={sentinelRef} />
           </TabsContent>
         </Tabs>
 

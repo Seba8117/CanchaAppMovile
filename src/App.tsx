@@ -39,6 +39,8 @@ import { OwnerNavigation } from "./components/navigation/OwnerNavigation";
 
 // --- 1. IMPORTACIÓN AÑADIDA ---
 import { EditCourtScreen } from "./components/screens/owner/EditCourtScreen";
+import { CourtDetailScreen } from "./components/screens/owner/CourtDetailScreen";
+import { ChatScreenOwner } from "./components/screens/owner/ChatScreenOwner";
 
 
 export default function App() {
@@ -293,6 +295,14 @@ export default function App() {
           return (
             <OwnerCourtsScreen onNavigate={handleNavigate} />
           );
+        case "court-detail":
+          return (
+            <CourtDetailScreen
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+              courtData={screenData}
+            />
+          );
         case "owner-profile":
           return (
             <OwnerProfile
@@ -302,6 +312,10 @@ export default function App() {
           );
         case "edit-owner-profile":
           return <EditOwnerProfileScreen onBack={handleBack} />;
+        case "owner-chat":
+          return <ChatScreenOwner onBack={handleBack} />;
+        case "ChatScreenOwner":
+          return <ChatScreenOwner onBack={handleBack} />;
         case "add-court":
           return (
             <AddCourtScreen
@@ -373,6 +387,8 @@ export default function App() {
     "delete-team",
     "my-bookings",
     "chat",
+    "owner-chat",
+    "ChatScreenOwner",
   ].includes(currentScreen);
 
   return (

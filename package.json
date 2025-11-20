@@ -59,21 +59,32 @@
             "tailwind-merge": "*",
             "vaul": "^1.1.2"
       },
-      "devDependencies": {
-            "@types/node": "^20.10.0",
-            "@types/react": "^19.2.2",
-            "@types/react-dom": "^19.2.2",
-            "@vitejs/plugin-react-swc": "^3.11.0",
-            "typescript": "^5.9.3",
-            "vite": "6.3.5"
-      },
-      "scripts": {
-            "dev": "vite",
-            "build": "vite build",
-            "preview": "vite preview",
-            "android": "cap run android",
-            "android:dev": "cap run android --livereload --external",
-            "build:android": "npm run build && cap sync android && cap open android",
-            "sync": "cap sync"
-      }
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react-swc": "^3.11.0",
+    "typescript": "^5.9.3",
+    "vite": "6.3.5",
+    "vitest": "^2.1.4",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/jest-dom": "^6.5.0",
+    "jsdom": "^24.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "android": "cap run android",
+    "android:dev": "cap run android --livereload --external",
+    "build:android": "npm run build && cap sync android && cap open android",
+    "sync": "cap sync",
+    "test": "vitest"
+  },
+  "vitest": {
+    "environment": "jsdom",
+    "setupFiles": [
+      "src/vitest.setup.ts"
+    ]
+  }
 }

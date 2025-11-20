@@ -20,17 +20,18 @@ import {
   orderBy,
   doc,
   getDoc,
-  updateDoc
+  updateDoc,
+  getDocs
 } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
 // --- FIN: Importaciones de Firebase ---
 
 
-interface ChatScreenProps {
+interface ChatScreenOwnerProps {
   onBack: () => void;
 }
 
-export function ChatScreen({ onBack }: ChatScreenProps) {
+export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(auth.currentUser);
   const [userDisplayName, setUserDisplayName] = useState<string>(''); // Para guardar el nombre del usuario
   const [chats, setChats] = useState<DocumentData[]>([]);
@@ -72,6 +73,32 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
     fetchUserName();
   }, [currentUser]);
 
+  // --- Purge Job Diario de Chats Expirados ---
+  useEffect(() => {
+    const runPurge = async () => {
+      if (!currentUser) return;
+      try {
+        const q = query(collection(db, 'chats'), where('participantsUids', 'array-contains', currentUser.uid));
+        const snap = await getDocs(q);
+        const now = Date.now();
+        const batchUpdates: Promise<any>[] = [];
+        snap.docs.forEach((d) => {
+          const data: any = d.data();
+          const expires = data?.expiresAt?.toMillis ? data.expiresAt.toMillis() : null;
+          if (expires && expires <= now && data.status !== 'expired') {
+            batchUpdates.push(updateDoc(doc(db, 'chats', d.id), { status: 'expired' }));
+          }
+        });
+        await Promise.all(batchUpdates);
+      } catch (e) {
+        console.log('Chat purge job error', e);
+      }
+    };
+    runPurge();
+    const interval = setInterval(runPurge, 24 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
   // --- Cargar Lista de Chats del Usuario ---
   useEffect(() => {
     if (!currentUser) {
@@ -89,7 +116,9 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const chatsData: DocumentData[] = [];
       querySnapshot.forEach((doc) => {
-        chatsData.push({ id: doc.id, ...doc.data() });
+        const data: any = doc.data();
+        const isExpired = data?.status === 'expired' || (data?.expiresAt?.toMillis && data.expiresAt.toMillis() <= Date.now());
+        if (!isExpired) chatsData.push({ id: doc.id, ...data });
       });
       setChats(chatsData);
       setLoadingChats(false);

@@ -8,8 +8,8 @@ import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { AppHeader } from '../../common/AppHeader';
 import { createMatch, getAllCourts } from '../../../services/matchService';
-import { auth } from '../../../Firebase/firebaseConfig';
-import { DocumentData } from 'firebase/firestore';
+import { auth, db } from '../../../Firebase/firebaseConfig';
+import { DocumentData, collection, query, where, getDocs, Timestamp, doc, setDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 interface CreateMatchScreenProps {
   onBack: () => void;
@@ -21,6 +21,8 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const [selectedCourtId, setSelectedCourtId] = useState('');
   const [includeMyTeam, setIncludeMyTeam] = useState(false);
   const [courts, setCourts] = useState<DocumentData[]>([]);
+  const [myTeams, setMyTeams] = useState<any[]>([]);
+  const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,28 +34,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const [pricePerPlayer, setPricePerPlayer] = useState(5000);
   const [description, setDescription] = useState('');
 
-  // Mock user's teams where they are captain
-  const myTeamsAsCaptain = [
-    {
-      id: 1,
-      name: 'Los Tigres FC',
-      sport: 'football',
-      members: 8,
-      maxMembers: 11,
-      image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200&h=200&fit=crop'
-    },
-    {
-      id: 2,
-      name: 'Águilas Basket',
-      sport: 'basketball',
-      members: 5,
-      maxMembers: 7,
-      image: undefined
-    }
-  ];
-
-  // Get teams that match the selected sport
-  const compatibleTeams = myTeamsAsCaptain.filter(team => team.sport === selectedSport);
+  const compatibleTeams = myTeams.filter(team => (team.sport?.toLowerCase?.() || '') === selectedSport);
   const selectedTeam = compatibleTeams.length > 0 ? compatibleTeams[0] : null;
 
   const sports = [
@@ -83,6 +64,42 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     loadCourts();
   }, []);
 
+  useEffect(() => {
+    const loadTeams = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const q = query(collection(db, 'teams'), where('captainId', '==', user.uid), where('status', '==', 'active'));
+        const snap = await getDocs(q);
+        const teamsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setMyTeams(teamsData);
+      } catch {}
+    };
+    loadTeams();
+  }, []);
+
+  useEffect(() => {
+    const checkAvailability = async () => {
+      if (!selectedCourtId || !matchDate) return;
+      setOccupiedSlots([]);
+      try {
+        const startOfDay = new Date(matchDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(matchDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        const q = query(collection(db, 'matches'), where('courtId', '==', selectedCourtId), where('date', '>=', Timestamp.fromDate(startOfDay)), where('date', '<=', Timestamp.fromDate(endOfDay)));
+        const querySnapshot = await getDocs(q);
+        const slots: string[] = [];
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (data.time) slots.push(data.time);
+        });
+        setOccupiedSlots(slots);
+      } catch {}
+    };
+    checkAvailability();
+  }, [selectedCourtId, matchDate]);
+
   // Efecto para calcular el precio por jugador automáticamente
   useEffect(() => {
     const court = courts.find(c => c.id === selectedCourtId);
@@ -93,9 +110,18 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     }
   }, [maxPlayers, selectedCourtId, matchDuration, courts]);
 
-  const timeSlots = [
-    '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'
-  ];
+  const getAvailableTimeSlots = () => {
+    const court = courts.find(c => c.id === selectedCourtId);
+    if (!court) return [];
+    const startHour = court.openingTime ? parseInt(String(court.openingTime).split(':')[0]) : 8;
+    const endHour = court.closingTime ? parseInt(String(court.closingTime).split(':')[0]) : 23;
+    const slots: string[] = [];
+    for (let i = startHour; i < endHour; i++) {
+      const t = `${String(i).padStart(2, '0')}:00`;
+      if (!occupiedSlots.includes(t)) slots.push(t);
+    }
+    return slots;
+  };
 
   const renderStep1 = () => (
     <div className="space-y-6">
@@ -209,10 +235,8 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
               <SelectValue placeholder="Selecciona una hora" />
             </SelectTrigger>
             <SelectContent>
-              {timeSlots.map((time) => (
-                <SelectItem key={time} value={time}>
-                  {time}
-                </SelectItem>
+              {getAvailableTimeSlots().map((time) => (
+                <SelectItem key={time} value={time}>{time}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -383,7 +407,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     setLoading(true);
     setError(null);
 
-    const matchData = {
+    const matchData: any = {
       sport: selectedSport,
       courtId: selectedCourtId,
       courtName: court.name,
@@ -408,9 +432,52 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     }
 
     try {
+      let initialPlayers = [currentUser.uid];
+      if (includeMyTeam && selectedTeam && Array.isArray(selectedTeam.members)) {
+        initialPlayers = Array.from(new Set([...initialPlayers, ...selectedTeam.members]));
+        matchData.players = initialPlayers;
+        matchData.currentPlayers = initialPlayers.length;
+        matchData.teamId = selectedTeam.id;
+        matchData.teamName = selectedTeam.name;
+      }
       const matchId = await createMatch(matchData);
-      alert("¡Partido creado exitosamente!");
-      onBack(); // Vuelve a la pantalla de inicio
+      if (initialPlayers.length > 1) {
+        const matchRef = doc(db, 'matches', matchId);
+        await updateDoc(matchRef, { players: initialPlayers, currentPlayers: initialPlayers.length });
+      }
+      const chatParticipants = [...initialPlayers];
+      if (court.ownerId) {
+        chatParticipants.push(court.ownerId);
+      }
+      const uniqueParticipants = Array.from(new Set(chatParticipants));
+      const chatRef = doc(db, 'chats', matchId);
+      // TTL: 7 días post-finalización
+      const matchEnd = new Date(matchData.date);
+      matchEnd.setHours(matchEnd.getHours() + (Number(matchData.duration) || 1));
+      const expiresDate = new Date(matchEnd.getTime() + 7 * 24 * 60 * 60 * 1000);
+      await setDoc(chatRef, {
+        id: matchId,
+        type: 'match',
+        name: `Partido en ${court.name}`,
+        participantsUids: uniqueParticipants,
+        lastMessage: '¡Partido creado!',
+        lastMessageTimestamp: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        ownerId: currentUser.uid,
+        matchId: matchId,
+        sport: selectedSport,
+        expiresAt: Timestamp.fromDate(expiresDate)
+      });
+      const messagesRef = collection(db, 'chats', matchId, 'messages');
+      await addDoc(messagesRef, {
+        text: includeMyTeam ? 'El equipo ha sido unido automáticamente.' : 'Coordinen aquí los detalles.',
+        senderId: 'system',
+        senderName: 'Sistema',
+        createdAt: serverTimestamp(),
+        system: true
+      });
+      alert('¡Partido y chat creados exitosamente!');
+      onBack();
     } catch (err: any) {
       setError(err.message || 'Error al crear el partido');
     } finally {
