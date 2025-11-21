@@ -1,7 +1,10 @@
-import { Bell, Users, Calendar, Trophy, AlertTriangle, Vote } from 'lucide-react';
+import { Bell, Users, Calendar, Trophy, AlertTriangle, Vote, MapPin } from 'lucide-react';
 import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
+import { useEffect, useState } from 'react';
+import { auth, db } from '../../../Firebase/firebaseConfig';
+import { collection, query, where, orderBy, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 
 interface NotificationsScreenProps {
   onBack?: () => void;
@@ -9,82 +12,22 @@ interface NotificationsScreenProps {
 }
 
 export function NotificationsScreen({ onBack, onNavigate }: NotificationsScreenProps) {
-  const notifications = [
-    {
-      id: 1,
-      type: 'team-delete-vote',
-      title: 'Votación para eliminar equipo',
-      message: 'El capitán quiere eliminar "Los Tigres FC". Tu voto es necesario.',
-      time: 'Hace 5 min',
-      read: false,
-      icon: Vote,
-      actionRequired: true,
-      teamId: 1
-    },
-    {
-      id: 2,
-      type: 'team-delete-initiated',
-      title: 'Proceso de eliminación iniciado',
-      message: 'Has iniciado la votación para eliminar "Los Tigres FC". Notificando a miembros...',
-      time: 'Hace 10 min',
-      read: false,
-      icon: AlertTriangle
-    },
-    {
-      id: 3,
-      type: 'match',
-      title: 'Nuevo partido disponible',
-      message: 'Fútbol en Cancha Los Pinos - 19:00',
-      time: 'Hace 30 min',
-      read: false,
-      icon: Calendar
-    },
-    {
-      id: 4,
-      type: 'team',
-      title: 'Invitación a equipo',
-      message: 'Los Águilas FC te invitó a unirte',
-      time: 'Hace 1 hora',
-      read: false,
-      icon: Users
-    },
-    {
-      id: 5,
-      type: 'team-delete-reminder',
-      title: 'Recordatorio de votación',
-      message: 'Quedan 24 horas para votar sobre "Los Tigres FC"',
-      time: 'Hace 2 horas',
-      read: true,
-      icon: Vote
-    },
-    {
-      id: 6,
-      type: 'reminder',
-      title: 'Recordatorio de partido',
-      message: 'Tu partido es en 2 horas',
-      time: 'Hace 3 horas',
-      read: true,
-      icon: Bell
-    },
-    {
-      id: 7,
-      type: 'tournament',
-      title: 'Nuevo torneo disponible',
-      message: 'Copa de Fútbol Santiago - Inscripciones abiertas',
-      time: 'Ayer',
-      read: true,
-      icon: Trophy
-    },
-    {
-      id: 8,
-      type: 'team-delete-result',
-      title: 'Equipo eliminado',
-      message: '"Los Leones FC" ha sido eliminado por votación mayoritaria',
-      time: 'Hace 2 días',
-      read: true,
-      icon: AlertTriangle
-    }
-  ];
+  const [items, setItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+    const q = query(collection(db, 'notifications'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setItems(rows);
+    });
+    return () => unsub();
+  }, []);
+
+  const markRead = async (id: string) => {
+    await updateDoc(doc(db, 'notifications', id), { read: true });
+  };
 
   const getNotificationColor = (type: string) => {
     switch (type) {
@@ -146,7 +89,7 @@ export function NotificationsScreen({ onBack, onNavigate }: NotificationsScreenP
       />
 
       <div className="p-4 space-y-3">
-        {notifications.map((notification) => {
+        {items.map((notification) => {
           const IconComponent = notification.icon;
           
           return (
@@ -157,12 +100,24 @@ export function NotificationsScreen({ onBack, onNavigate }: NotificationsScreenP
               } ${
                 notification.actionRequired ? 'bg-red-50 border-l-red-500' : ''
               }`}
-              onClick={() => handleNotificationClick(notification)}
+              onClick={() => {
+                markRead(String(notification.id));
+                const actions = notification.actions || [];
+                if (Array.isArray(actions)) {
+                  const a = actions[0]?.key;
+                  if (a === 'join' && onNavigate && notification.data?.matchId) {
+                    onNavigate('match-detail', { id: notification.data.matchId });
+                  }
+                  if (a === 'confirm-booking' && onNavigate) {
+                    onNavigate('my-bookings');
+                  }
+                }
+              }}
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
                   <div className={`p-2 rounded-full ${getNotificationColor(notification.type)}`}>
-                    <IconComponent size={16} />
+                    {notification.type === 'proximity' ? <MapPin size={16} /> : <Bell size={16} />}
                   </div>
                   
                   <div className="flex-1 min-w-0">
@@ -176,7 +131,7 @@ export function NotificationsScreen({ onBack, onNavigate }: NotificationsScreenP
                     </div>
                     <p className="text-sm text-gray-600 mb-2">{notification.message}</p>
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-500">{notification.time}</span>
+                      <span className="text-xs text-gray-500">{notification.time || ''}</span>
                       <div className="flex items-center space-x-2">
                         {notification.actionRequired && (
                           <Badge variant="destructive" className="text-xs animate-pulse">

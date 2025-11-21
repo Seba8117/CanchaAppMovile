@@ -302,6 +302,18 @@ export function SearchScreen({ onNavigate, onBack }: SearchScreenProps) {
           lastMessageTimestamp: new Date(),
         });
       }
+      const creatorId = ownerId;
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: creatorId,
+          type: 'match-join',
+          title: 'Nuevo jugador se unió',
+          message: `${currentUser.displayName || 'Jugador'} se unió a tu partido en ${matchData.courtName || matchData.location?.name || 'Cancha'}`,
+          data: { matchId },
+          createdAt: serverTimestamp(),
+          read: false,
+        });
+      } catch {}
       console.log("¡Unido al partido y chat creado/actualizado!");
       onNavigate('chat');
     } catch (err: any) {

@@ -41,6 +41,7 @@ import { OwnerNavigation } from "./components/navigation/OwnerNavigation";
 import { EditCourtScreen } from "./components/screens/owner/EditCourtScreen";
 import { CourtDetailScreen } from "./components/screens/owner/CourtDetailScreen";
 import { ChatScreenOwner } from "./components/screens/owner/ChatScreenOwner";
+import { initPush } from "./services/pushService";
 
 
 export default function App() {
@@ -92,6 +93,7 @@ export default function App() {
     setCurrentScreen(type === "owner" ? "owner-dashboard" : "home");
     setError(null);
     console.log("Usuario logueado correctamente con Firebase Auth");
+    try { initPush(user.uid); } catch {}
   };
 
   const handleLogout = async () => {

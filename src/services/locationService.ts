@@ -1,6 +1,23 @@
 export type LatLng = { lat: number; lng: number };
 import { Geolocation } from '@capacitor/geolocation';
 
+export async function reverseGeocode(loc: LatLng): Promise<string | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${loc.lat}&lon=${loc.lng}`;
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const addr = data?.address || {};
+    const road = addr.road || addr.pedestrian || addr.footway || addr.path;
+    const commune = addr.suburb || addr.city_district || addr.municipality || addr.city || addr.town || addr.village;
+    const parts = [road, commune].filter(Boolean);
+    const formatted = parts.join(', ');
+    return formatted || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getCurrentPosition(options?: PositionOptions): Promise<GeolocationPosition> {
   try {
     const pos = await Geolocation.getCurrentPosition({
@@ -49,6 +66,44 @@ export async function getUserLocationCached(maxAgeMs = 10 * 60 * 1000): Promise<
     return coords;
   } catch {
     return null;
+  }
+}
+
+export function watchUserLocation(callback: (coords: LatLng) => void): () => void {
+  let cleared = false;
+  let id: any = null;
+  try {
+    id = (Geolocation as any).watchPosition({ enableHighAccuracy: false }, (pos: any) => {
+      if (cleared || !pos) return;
+      const c = { lat: pos?.coords?.latitude, lng: pos?.coords?.longitude };
+      if (typeof c.lat === 'number' && typeof c.lng === 'number') {
+        try {
+          sessionStorage.setItem('userLocation', JSON.stringify(c));
+          sessionStorage.setItem('userLocationTs', String(Date.now()));
+        } catch {}
+        callback(c);
+      }
+    });
+    return () => {
+      cleared = true;
+      try { (Geolocation as any).clearWatch({ id }); } catch {}
+    };
+  } catch {
+    if (!('geolocation' in navigator)) return () => { cleared = true; };
+    id = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (cleared || !pos) return;
+        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        try {
+          sessionStorage.setItem('userLocation', JSON.stringify(c));
+          sessionStorage.setItem('userLocationTs', String(Date.now()));
+        } catch {}
+        callback(c);
+      },
+      () => {},
+      { enableHighAccuracy: false }
+    );
+    return () => { cleared = true; try { navigator.geolocation.clearWatch(id); } catch {} };
   }
 }
 

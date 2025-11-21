@@ -50,6 +50,18 @@ export const createBooking = async (bookingData: BookingData) => {
       updatedAt: serverTimestamp(),
     };
     const docRef = await addDoc(collection(db, 'bookings'), bookingWithTimestamp);
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        userId: bookingData.ownerId,
+        type: 'booking',
+        title: 'Nueva reserva recibida',
+        message: `${bookingData.playerName} reservó ${bookingData.courtName} • ${bookingData.startTime}-${bookingData.endTime} • ${bookingData.duration}h • $${bookingData.price}`,
+        data: { bookingId: docRef.id, courtId: bookingData.courtId },
+        actions: [{ key: 'confirm-booking', label: 'Confirmar' }, { key: 'reject-booking', label: 'Rechazar' }],
+        createdAt: serverTimestamp(),
+        read: false,
+      });
+    } catch {}
     return docRef.id;
   } catch (error) {
     console.error("Error al crear la reserva: ", error);
