@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { AppHeader } from '../../common/AppHeader';
 import { createMatch, getAllCourts } from '../../../services/matchService';
 import { auth, db } from '../../../Firebase/firebaseConfig';
+import { startMatchCheckout } from '../../../services/paymentService';
 import { DocumentData, collection, query, where, getDocs, Timestamp, doc, setDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 interface CreateMatchScreenProps {
@@ -25,6 +26,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paymentMode, setPaymentMode] = useState<'immediate' | 'deferred'>('deferred');
 
   // State for match details
   const [matchDate, setMatchDate] = useState('');
@@ -422,7 +424,9 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       captainName: currentUser.displayName || "Capitán Anónimo",
       status: 'open',
       players: [currentUser.uid],
-      currentPlayers: 1
+      currentPlayers: 1,
+      totalCost: (courts.find(c => c.id === selectedCourtId)?.pricePerHour || 0) * matchDuration,
+      paymentStatus: 'pending'
     };
 
     // Añadir información del equipo si está incluido
@@ -476,8 +480,18 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
         createdAt: serverTimestamp(),
         system: true
       });
-      alert('¡Partido y chat creados exitosamente!');
-      onBack();
+      if (paymentMode === 'immediate') {
+        try {
+          await updateDoc(doc(db, 'matches', matchId), { paymentStatus: 'pending' });
+          await startMatchCheckout({ matchId, title: `Partido en ${court.name}`, price: (court.pricePerHour || 0) * matchDuration, payerEmail: currentUser.email || null });
+        } catch {
+          alert('No se pudo iniciar el pago. El partido quedó con pago pendiente.');
+          onBack();
+        }
+      } else {
+        alert('¡Partido creado! Podrás pagar antes de iniciar el partido.');
+        onBack();
+      }
     } catch (err: any) {
       setError(err.message || 'Error al crear el partido');
     } finally {
@@ -526,6 +540,13 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           <div className="flex justify-between border-t pt-2">
             <span className="text-[#172c44]">Total arriendo cancha:</span>
             <span className="text-[#172c44] font-bold">${totalCost?.toLocaleString() || 'N/A'}</span>
+          </div>
+          <div className="flex justify-between border-t pt-2">
+            <span className="text-[#172c44]">Modo de pago:</span>
+            <div className="flex items-center gap-2">
+              <button className={`${paymentMode === 'deferred' ? 'bg-[#00a884] text-white' : 'bg-gray-200 text-[#172c44]'} px-3 py-1 rounded`} onClick={() => setPaymentMode('deferred')}>Diferido</button>
+              <button className={`${paymentMode === 'immediate' ? 'bg-[#00a884] text-white' : 'bg-gray-200 text-[#172c44]'} px-3 py-1 rounded`} onClick={() => setPaymentMode('immediate')}>Inmediato</button>
+            </div>
           </div>
         </CardContent>
       </Card>

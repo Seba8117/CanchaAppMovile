@@ -6,6 +6,9 @@ import { Avatar, AvatarFallback } from '../../ui/avatar';
 import { useEffect, useState } from 'react';
 import { getMatchById } from '../../../services/matchService';
 import { getUserLocationCached, haversineKm, mapsUrlFor } from '../../../services/locationService';
+import { auth, db } from '../../../Firebase/firebaseConfig';
+import { doc, getDoc, updateDoc, setDoc, collection, addDoc, serverTimestamp, arrayUnion, increment } from 'firebase/firestore';
+import { startMatchCheckout, checkPaymentStatus } from '../../../services/paymentService';
 
 interface MatchDetailScreenProps {
   match: any;
@@ -20,6 +23,10 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
   const [data, setData] = useState<any>(match || null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [lastClickTs, setLastClickTs] = useState<number>(0);
+  const [joining, setJoining] = useState<boolean>(false);
+  const [captainDisplayName, setCaptainDisplayName] = useState<string | null>(null);
+  const [starting, setStarting] = useState<boolean>(false);
+  const [paymentStatusLocal, setPaymentStatusLocal] = useState<string | null>(null);
 
   useEffect(() => {
     const mustFetch = !!match?.id && (!match?.courtName || !match?.players);
@@ -46,6 +53,20 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
     };
     getLoc();
   }, []);
+
+  useEffect(() => {
+    const loadCaptain = async () => {
+      try {
+        const capId = data?.captainId || data?.ownerId;
+        if (!capId) return;
+        const ref = doc(db, 'users', capId);
+        const snap = await getDoc(ref);
+        const name = snap.exists() ? (snap.data() as any)?.displayName : null;
+        setCaptainDisplayName(name || data?.captainName || null);
+      } catch {}
+    };
+    loadCaptain();
+  }, [data?.captainId, data?.ownerId, data?.captainName]);
 
   const handleViewAllClick = () => {
     const now = Date.now();
@@ -77,6 +98,142 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
   const matchDate = toDate(data?.date);
   const teamIncluded = !!data?.teamId && !!data?.teamName;
   const pricePerPlayer = Number(data?.pricePerPlayer || data?.price || 0);
+  const matchId = String(data?.id || match?.id || '');
+  const ownerId = String(data?.ownerId || data?.captainId || '');
+  const isJoined = !!playersArray.find((uid) => uid === auth?.currentUser?.uid);
+  const isOwner = (auth?.currentUser?.uid && ownerId) ? auth.currentUser.uid === ownerId : false;
+  const totalCost = Number((data?.totalCost as any) || pricePerPlayer * (maxPlayers || 0) || 0);
+
+  const handleGoToChat = async () => {
+    try {
+      const uid = auth?.currentUser?.uid;
+      if (!uid) { setError('Debes iniciar sesión para ver el chat.'); return; }
+      if (!matchId) { setError('No se encontró el ID del partido.'); return; }
+      const chatRef = doc(db, 'chats', matchId);
+      const chatSnap = await getDoc(chatRef);
+      const allParticipants = Array.from(new Set([ownerId, ...playersArray].filter(Boolean)));
+      if (chatSnap.exists()) {
+        await updateDoc(chatRef, { participantsUids: allParticipants });
+      } else {
+        await setDoc(chatRef, {
+          id: matchId,
+          name: `Partido - ${data?.courtName || 'Chat de Partido'}`,
+          type: 'match',
+          participantsUids: allParticipants,
+          ownerId: ownerId,
+          lastMessage: 'Chat creado automáticamente',
+          lastMessageTimestamp: serverTimestamp(),
+        });
+      }
+      onNavigate && onNavigate('chat');
+    } catch (e) {
+      setError('No se pudo abrir el chat del partido.');
+    }
+  };
+
+  const handleStartMatch = async () => {
+    try {
+      const uid = auth?.currentUser?.uid;
+      if (!uid || !isOwner) { setError('Solo el organizador puede iniciar el partido.'); return; }
+      if (!matchId) { setError('No se encontró el ID del partido.'); return; }
+      setStarting(true);
+      const statusField = String(data?.paymentStatus || paymentStatusLocal || 'pending');
+      if (statusField !== 'approved') {
+        try {
+          const chk = await checkPaymentStatus(matchId);
+          setPaymentStatusLocal(chk.status);
+          if (chk.status !== 'approved') {
+            await startMatchCheckout({ matchId, title: `Pago de partido`, price: totalCost, payerEmail: auth?.currentUser?.email || null });
+            setStarting(false);
+            return;
+          }
+        } catch {
+          await startMatchCheckout({ matchId, title: `Pago de partido`, price: totalCost, payerEmail: auth?.currentUser?.email || null });
+          setStarting(false);
+          return;
+        }
+      }
+      await updateDoc(doc(db, 'matches', matchId), { status: 'active', paymentStatus: 'approved' });
+      try {
+        const paymentsRef = collection(db, 'payments');
+        await addDoc(paymentsRef, {
+          matchId,
+          userId: ownerId,
+          status: 'approved',
+          amount: totalCost,
+          createdAt: serverTimestamp(),
+        });
+      } catch {}
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: ownerId,
+          type: 'payment',
+          title: 'Pago confirmado',
+          message: 'Puedes iniciar el partido. Pago aprobado.',
+          data: { matchId },
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch {}
+      setStarting(false);
+      onNavigate && onNavigate('match-players', data);
+    } catch (e: any) {
+      setStarting(false);
+      setError(e?.message || 'No se pudo iniciar el partido.');
+    }
+  };
+
+  const handleJoinMatch = async () => {
+    try {
+      const uid = auth?.currentUser?.uid;
+      if (!uid) { setError('Debes iniciar sesión para unirte.'); return; }
+      if (!matchId) { setError('No se encontró el ID del partido.'); return; }
+      setJoining(true);
+      const matchRef = doc(db, 'matches', matchId);
+      const snap = await getDoc(matchRef);
+      if (!snap.exists()) { throw new Error('Este partido ya no existe.'); }
+      const m = snap.data() as any;
+      const playersList: string[] = m.players || [];
+      if ((playersList.length || 0) >= (m.maxPlayers || maxPlayers)) { throw new Error('¡Lo sentimos! El partido ya está lleno.'); }
+      if (playersList.includes(uid)) { handleGoToChat(); setJoining(false); return; }
+      await updateDoc(matchRef, { players: arrayUnion(uid), currentPlayers: increment(1) });
+      const chatRef = doc(db, 'chats', matchId);
+      const chatSnap = await getDoc(chatRef);
+      const allParticipants = Array.from(new Set([ownerId, ...playersList, uid].filter(Boolean)));
+      if (chatSnap.exists()) {
+        await updateDoc(chatRef, { participantsUids: allParticipants });
+      } else {
+        await setDoc(chatRef, {
+          id: matchId,
+          name: `Partido - ${m.courtName || 'Chat de Partido'}`,
+          type: 'match',
+          participantsUids: allParticipants,
+          ownerId: ownerId,
+          lastMessage: `${auth?.currentUser?.displayName || 'Un jugador'} se ha unido al chat.`,
+          lastMessageTimestamp: serverTimestamp(),
+        });
+      }
+      try {
+        const creatorId = ownerId;
+        if (creatorId) {
+          await addDoc(collection(db, 'notifications'), {
+            userId: creatorId,
+            type: 'match-join',
+            title: 'Nuevo jugador se unió',
+            message: `${auth?.currentUser?.displayName || 'Jugador'} se unió a tu partido en ${m.courtName || m.location?.name || 'Cancha'}`,
+            data: { matchId },
+            createdAt: serverTimestamp(),
+            read: false,
+          });
+        }
+      } catch {}
+      setJoining(false);
+      onNavigate && onNavigate('chat');
+    } catch (err: any) {
+      setJoining(false);
+      setError(err?.message || 'No se pudo unir al partido.');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884]">
@@ -134,11 +291,19 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="flex items-center gap-2">
                 <Calendar className="text-[#172c44]" size={16} />
                 <span className="text-sm">{matchDate ? matchDate.toLocaleDateString() : 'Fecha no definida'}</span>
-              </div>
+          </div>
+          {isOwner && (
+            <div className="mt-3">
+              <Button className="w-full bg-[#00a884] hover:bg-[#008f73] text-white" onClick={handleStartMatch} disabled={starting}>
+                {starting ? 'Verificando pago…' : (String(data?.paymentStatus || paymentStatusLocal) === 'approved' ? 'Iniciar Partido' : 'Pagar e Iniciar')}
+              </Button>
+              <p className="text-xs text-gray-600 mt-2">Estado de pago: {String(data?.paymentStatus || paymentStatusLocal || 'pending')}</p>
+            </div>
+          )}
               <div className="flex items-center gap-2">
                 <Clock className="text-[#172c44]" size={16} />
                 <span className="text-sm">{String(data?.time || 'Hora no definida')}</span>
@@ -166,23 +331,23 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
         <Card>
           <CardContent className="p-4">
             <h3 className="text-[#172c44] mb-3">Capitán del Equipo</h3>
-            <div className="flex items-center gap-3">
-              <Avatar className="w-12 h-12">
+              <div className="flex items-center gap-3">
+                <Avatar className="w-12 h-12">
                 <AvatarFallback className="bg-[#f4b400] text-[#172c44]">
-                  JP
+                  {String(captainDisplayName || data?.captainName || 'CA').substring(0,2).toUpperCase()}
                 </AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <p className="text-[#172c44]">{String(data?.captainName || 'Capitán Anónimo')}</p>
-                <div className="flex items-center gap-1">
-                  <Star className="text-[#f4b400]" size={12} fill="currentColor" />
-                  <span className="text-sm text-gray-600">4.8 • 127 partidos</span>
+                </Avatar>
+                <div className="flex-1">
+                <p className="text-[#172c44]">{String(captainDisplayName || data?.captainName || 'Capitán Anónimo')}</p>
+                  <div className="flex items-center gap-1">
+                    <Star className="text-[#f4b400]" size={12} fill="currentColor" />
+                    <span className="text-sm text-gray-600">4.8 • 127 partidos</span>
+                  </div>
                 </div>
+                <Button variant="outline" size="sm" className="text-[#00a884] border-[#00a884]" onClick={handleGoToChat}>
+                  Ir al Chat
+                </Button>
               </div>
-              <Button variant="outline" size="sm" className="text-[#00a884] border-[#00a884]">
-                Mensaje
-              </Button>
-            </div>
           </CardContent>
         </Card>
 
@@ -269,8 +434,16 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200">
         <Button 
           className="w-full bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] h-12"
+          onClick={isJoined ? handleGoToChat : handleJoinMatch}
+          disabled={joining}
         >
-          Unirse al Partido - {formatCLP(pricePerPlayer)}
+          {joining ? (
+            <span>Procesando...</span>
+          ) : isJoined ? (
+            <span>Ir al Chat</span>
+          ) : (
+            <span>Unirse al Partido - {formatCLP(pricePerPlayer)}</span>
+          )}
         </Button>
       </div>
     </div>

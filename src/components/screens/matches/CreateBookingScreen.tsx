@@ -6,6 +6,7 @@ import { AppHeader } from '../../common/AppHeader';
 import { doc, getDoc, DocumentData } from 'firebase/firestore';
 import { db, auth } from '../../../Firebase/firebaseConfig';
 import { createBooking, getBookingsForDate } from '../../../services/bookingService';
+import { startBookingCheckout } from '../../../services/paymentService';
 
 interface CreateBookingScreenProps {
   onBack: () => void;
@@ -100,9 +101,18 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
         duration: 60,
         price: court.pricePerHour,
       };
-      await createBooking(bookingData);
-      alert('¡Reserva confirmada exitosamente!');
-      onNavigate('my-bookings'); // Navegar a una pantalla de "Mis Reservas"
+      const bookingId = await createBooking(bookingData);
+      try {
+        await startBookingCheckout({
+          bookingId,
+          title: `Reserva: ${court.name}`,
+          price: court.pricePerHour,
+          payerEmail: currentUser.email || null,
+        });
+      } catch (e) {
+        alert('La reserva quedó pendiente de pago. No se pudo abrir el checkout.');
+        onNavigate('my-bookings');
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -42,13 +42,13 @@ export const createBooking = async (bookingData: BookingData) => {
       throw new Error("Esta cancha está desactivada y no acepta reservas.");
     }
 
-    const bookingWithTimestamp = {
-      ...bookingData,
-      date: Timestamp.fromDate(bookingData.date),
-      status: 'confirmed', // O 'pending_payment' si tienes un sistema de pago
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
+            const bookingWithTimestamp = {
+              ...bookingData,
+              date: Timestamp.fromDate(bookingData.date),
+              status: 'pending_payment',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            };
     const docRef = await addDoc(collection(db, 'bookings'), bookingWithTimestamp);
     try {
       await addDoc(collection(db, 'notifications'), {
