@@ -49,8 +49,10 @@ export async function startBookingCheckout(opts: {
   price: number;
   payerEmail?: string | null;
 }) {
+  const forced = Number((import.meta as any).env?.VITE_MP_FORCE_AMOUNT);
+  const amount = (!isNaN(forced) && forced > 0) ? forced : Math.max(0, Number(opts.price) || 0);
   const pref = await createCheckoutPreference({
-    items: [{ title: opts.title, quantity: 1, unit_price: Math.max(0, Number(opts.price) || 0) }],
+    items: [{ title: opts.title, quantity: 1, unit_price: amount }],
     external_reference: opts.bookingId,
     payer_email: opts.payerEmail || null,
     back_urls: {
@@ -80,8 +82,10 @@ export async function startMatchCheckout(opts: {
   price: number;
   payerEmail?: string | null;
 }) {
+  const forced = Number((import.meta as any).env?.VITE_MP_FORCE_AMOUNT);
+  const amount = (!isNaN(forced) && forced > 0) ? forced : Math.max(0, Number(opts.price) || 0);
   const pref = await createCheckoutPreference({
-    items: [{ title: opts.title, quantity: 1, unit_price: Math.max(0, Number(opts.price) || 0) }],
+    items: [{ title: opts.title, quantity: 1, unit_price: amount }],
     external_reference: opts.matchId,
     payer_email: opts.payerEmail || null,
     back_urls: {
