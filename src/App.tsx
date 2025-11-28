@@ -39,9 +39,18 @@ import { OwnerNavigation } from "./components/navigation/OwnerNavigation";
 
 // --- 1. IMPORTACIÓN AÑADIDA ---
 import { EditCourtScreen } from "./components/screens/owner/EditCourtScreen";
+
+=======
 import { CourtDetailScreen } from "./components/screens/owner/CourtDetailScreen";
 import { ChatScreenOwner } from "./components/screens/owner/ChatScreenOwner";
 import { initPush } from "./services/pushService";
+import { Toaster } from "./components/ui/sonner";
+
+=======
+import { CourtDetailScreen } from "./components/screens/owner/CourtDetailScreen";
+import { ChatScreenOwner } from "./components/screens/owner/ChatScreenOwner";
+import { initPush } from "./services/pushService";
+
 
 
 export default function App() {
@@ -425,6 +434,7 @@ export default function App() {
           onTabChange={setCurrentScreen}
         />
       )}
+      <Toaster />
     </div>
   );
 }

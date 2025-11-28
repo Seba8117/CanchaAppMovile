@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, Search, Filter, MapPin, Clock, Users, Calendar, Trophy } from 'lucide-react';
 import { AppHeader } from '../../common/AppHeader';
 import { getAvailableMatches, joinMatch, searchMatches } from '../../../services/matchService';
@@ -102,7 +103,14 @@ export function AvailableMatchesScreen({ onBack, onNavigate }: AvailableMatchesS
       
     } catch (error) {
       console.error('Error al unirse al partido:', error);
+
+      toast.error('Error al unirse', { description: error instanceof Error ? error.message : 'No se pudo unir al partido.' });
+=======
+      toast.error(error instanceof Error ? error.message : 'Error al unirse al partido');
+
+=======
       alert(error instanceof Error ? error.message : 'Error al unirse al partido');
+
     } finally {
       setJoiningMatchId(null);
     }

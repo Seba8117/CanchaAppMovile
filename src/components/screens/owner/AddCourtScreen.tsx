@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, MapPin, Clock, Zap } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -143,7 +144,12 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
       const docRef = await addDoc(collection(db, 'cancha'), courtData);
       console.log('Cancha creada con ID: ', docRef.id);
       
+      toast.success('¡Cancha creada exitosamente!', {
+        description: `La cancha "${formData.name}" ya está disponible para ser reservada.`,
+      });
+
       alert('¡Cancha creada exitosamente!');
+
       onBack(); // Regresar a la pantalla anterior después de crear
 
     } catch (err) {

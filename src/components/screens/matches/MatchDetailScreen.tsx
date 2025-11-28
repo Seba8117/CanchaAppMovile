@@ -1,11 +1,17 @@
+import { useState, useEffect } from 'react';
+import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye, Loader2 } from 'lucide-react';
+=======
 import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye, Loader2, AlertCircle } from 'lucide-react';
+
 import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
+=======
 import { useEffect, useState } from 'react';
 import { getMatchById } from '../../../services/matchService';
 import { getUserLocationCached, haversineKm, mapsUrlFor } from '../../../services/locationService';
+
 import { auth, db } from '../../../Firebase/firebaseConfig';
 import { doc, getDoc, updateDoc, setDoc, collection, addDoc, serverTimestamp, arrayUnion, increment } from 'firebase/firestore';
 import { startMatchCheckout, checkPaymentStatus } from '../../../services/paymentService';
@@ -18,6 +24,15 @@ interface MatchDetailScreenProps {
 }
 
 export function MatchDetailScreen({ match, onBack, onNavigate, userType }: MatchDetailScreenProps) {
+  const [currentMatch, setCurrentMatch] = useState(match); // Estado local para el partido
+  const [playerDetails, setPlayerDetails] = useState<any[]>([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(true);
+  const [isJoining, setIsJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+
+  const currentUser = auth.currentUser;
+  const isUserInMatch = currentUser && currentMatch.players?.includes(currentUser.uid);
+  const isMatchFull = currentMatch.currentPlayers >= currentMatch.maxPlayers;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(match || null);
@@ -28,16 +43,36 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
   const [starting, setStarting] = useState<boolean>(false);
   const [paymentStatusLocal, setPaymentStatusLocal] = useState<string | null>(null);
 
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [playersDetails, setPlayersDetails] = useState<any[]>([]);
+
+=======
+
+
   useEffect(() => {
     const mustFetch = !!match?.id && (!match?.courtName || !match?.players);
     const fetchData = async () => {
       try {
+        const playerPromises = currentMatch.players.map(async (playerId: string) => {
+          const playerDocRef = doc(db, 'jugador', playerId);
+          const playerDocSnap = await getDoc(playerDocRef);
+          if (playerDocSnap.exists()) {
+            return { id: playerId, ...playerDocSnap.data() };
+          }
+          return { id: playerId, name: 'Jugador Desconocido', rating: 0 };
+        });
+        const players = await Promise.all(playerPromises);
+        setPlayerDetails(players);
+      } catch (error) {
+        console.error("Error fetching player details:", error);
+=======
         setLoading(true);
         setError(null);
         const fresh = await getMatchById(match.id);
         setData(fresh || match);
       } catch (err: any) {
         setError(err.message || 'No se pudo cargar el partido.');
+
       } finally {
         setLoading(false);
       }
@@ -235,6 +270,26 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
     }
   };
 
+  const handleDeleteMatch = () => {
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDeleteMatch = async () => {
+    try {
+      await deleteMatch(matchId);
+      toast.success("Partido cancelado y jugadores notificados.");
+      onBack();
+    } catch (error: any) {
+      if (error.message.includes("Missing or insufficient permissions")) {
+        toast.error("No tienes permisos para eliminar este partido.");
+      } else {
+        toast.error(error.message || "No se pudo eliminar el partido.");
+      }
+    } finally {
+      setShowDeleteDialog(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884]">
       {loading && (
@@ -294,6 +349,9 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
           <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="flex items-center gap-2">
                 <Calendar className="text-[#172c44]" size={16} />
+                <span className="text-sm">{formatDate(currentMatch.date)}</span>
+              </div>
+=======
                 <span className="text-sm">{matchDate ? matchDate.toLocaleDateString() : 'Fecha no definida'}</span>
           </div>
           {isOwner && (
@@ -304,6 +362,7 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               <p className="text-xs text-gray-600 mt-2">Estado de pago: {String(data?.paymentStatus || paymentStatusLocal || 'pending')}</p>
             </div>
           )}
+
               <div className="flex items-center gap-2">
                 <Clock className="text-[#172c44]" size={16} />
                 <span className="text-sm">{String(data?.time || 'Hora no definida')}</span>
@@ -377,17 +436,23 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               </div>
             </div>
             <div className="space-y-3">
-              {playersArray.length > 0 ? (
-                playersArray.map((playerId) => (
-                  <div key={playerId} className="flex items-center gap-3">
+              {loadingPlayers ? (
+                <div className="flex justify-center p-4"><Loader2 className="animate-spin text-gray-500" /></div>
+              ) : (
+                playerDetails.map((player) => (
+                  <div key={player.id} className="flex items-center gap-3">
                     <Avatar className="w-10 h-10">
                       <AvatarFallback className="bg-gray-200 text-[#172c44] text-sm">
                         {String(playerId).substring(0,2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
+                      <p className="text-sm text-[#172c44]">{player.name}</p>
+                      <p className="text-xs text-gray-600">{player.id === currentMatch.captainId ? 'Capitán' : 'Jugador'}</p>
+=======
                       <p className="text-sm text-[#172c44]">Jugador</p>
                       <p className="text-xs text-gray-600">ID: {String(playerId)}</p>
+
                     </div>
                     <div className="flex items-center gap-1">
                       <Star className="text-[#f4b400]" size={12} fill="currentColor" />
@@ -395,8 +460,10 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
                     </div>
                   </div>
                 ))
+=======
               ) : (
                 <div className="text-center py-6 text-gray-600">No hay jugadores confirmados aún.</div>
+
               )}
             </div>
           </CardContent>
@@ -431,7 +498,8 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
       </div>
 
       {/* Fixed Bottom Button */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200">
+      <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-200 max-w-sm mx-auto">
+        {joinError && <p className="text-red-500 text-center text-sm mb-2">{joinError}</p>}
         <Button 
           className="w-full bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] h-12"
           onClick={isJoined ? handleGoToChat : handleJoinMatch}
@@ -445,7 +513,56 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             <span>Unirse al Partido - {formatCLP(pricePerPlayer)}</span>
           )}
         </Button>
+=======
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200">
+        {isOwner ? (
+          <div className="flex gap-2">
+            <Button 
+              variant="destructive"
+              className="flex-1 h-12"
+              onClick={handleDeleteMatch}
+            >
+              Cancelar Partido
+            </Button>
+            <Button 
+              className="flex-1 bg-[#00a884] hover:bg-[#008f73] text-white h-12"
+              onClick={handleStartMatch} disabled={starting}
+            >
+              {starting ? 'Verificando...' : 'Iniciar Partido'}
+            </Button>
+          </div>
+        ) : (
+          <Button 
+            className="w-full bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] h-12"
+            onClick={isJoined ? handleGoToChat : handleJoinMatch}
+            disabled={joining}
+          >
+            {joining ? (
+              <span>Procesando...</span>
+            ) : isJoined ? (
+              <span>Ir al Chat</span>
+            ) : (
+              <span>Unirse al Partido - {formatCLP(pricePerPlayer)}</span>
+            )}
+          </Button>
+        )}
+
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se cancelará el partido y se notificará a los jugadores.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No, mantener</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteMatch}>Sí, cancelar partido</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, Trophy, Calendar, Users, MapPin, DollarSign, Clock, Info, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -161,7 +162,12 @@ export function CreateTournamentScreen({ onBack, onNavigate }: CreateTournamentS
       const docRef = await addDoc(collection(db, 'torneo'), tournamentData);
       console.log('Torneo creado con ID: ', docRef.id);
       
+      toast.success('¡Torneo creado exitosamente!', {
+        description: `El torneo "${formData.name}" ha sido publicado.`,
+      });
+
       alert('¡Torneo creado exitosamente!');
+
       onNavigate('tournament-management', { id: docRef.id, ...tournamentData });
 
     } catch (err) {

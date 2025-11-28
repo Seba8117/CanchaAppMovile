@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, AlertTriangle, Users, Check, X, Clock, Mail, Bell } from 'lucide-react';
 import { notificationService } from '../../common/NotificationHelper';
 import { deleteTeam } from '../../../services/teamService';
@@ -103,7 +104,7 @@ export function DeleteTeamScreen({ teamData, onBack, onTeamDeleted, currentUserI
     } catch (error) {
       console.error('Error al eliminar el equipo:', error);
       // You could show an error notification here
-      alert('Error al eliminar el equipo. Inténtalo de nuevo.');
+      toast.error('Error al eliminar el equipo. Inténtalo de nuevo.');
     }
   };
 

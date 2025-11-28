@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, Calendar, Clock, DollarSign, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -101,6 +102,15 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
         duration: 60,
         price: court.pricePerHour,
       };
+
+      await createBooking(bookingData);
+      toast.success('¡Reserva confirmada exitosamente!', {
+        description: `Tu reserva para ${court.name} el ${selectedDate.toLocaleDateString()} a las ${selectedTime} ha sido guardada.`,
+      });
+      onNavigate('my-bookings'); // Navegar a una pantalla de "Mis Reservas"
+=======
+=======
+
       const bookingId = await createBooking(bookingData);
       try {
         await startBookingCheckout({
@@ -110,9 +120,16 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
           payerEmail: currentUser.email || null,
         });
       } catch (e) {
+
+        toast.error('La reserva quedó pendiente de pago. No se pudo abrir el checkout.');
+        onNavigate('my-bookings');
+      }
+
+=======
         alert('La reserva quedó pendiente de pago. No se pudo abrir el checkout.');
         onNavigate('my-bookings');
       }
+
     } catch (err: any) {
       setError(err.message);
     } finally {

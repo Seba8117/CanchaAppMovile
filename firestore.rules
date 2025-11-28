@@ -68,27 +68,27 @@ service cloud.firestore {
         && request.auth.uid != null; // Mejorar esto luego
     }
     
-    // Reglas para usuarios (fallback)
-    match /users/{userId} {
-      allow read, write: if request.auth != null 
-        && request.auth.uid == userId;
-    }
-    
-    // --- REGLAS PARA CHATS (ESTO FALTABA) ---
-    match /chats/{chatId} {
-      // Un usuario SÓLO puede leer un chat si su ID está en la lista de participantes.
-      // Esto es lo que soluciona tu error de "permiso denegado".
-      allow read: if request.auth != null && request.auth.uid in resource.data.participantsUids;
-      
-      // Un usuario autenticado puede crear o actualizar un chat (al unirse a un partido)
-      allow create, update: if request.auth != null; 
-      
-      // Permitir que los participantes lean y escriban mensajes en la subcolección
-      match /messages/{messageId} {
-        allow read, create: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantsUids;
-        // No permitir borrar o editar mensajes (opcional, pero más seguro)
-        allow update, delete: if false;
-      }
-    }
+ // --- REGLAS PARA CHATS ---
+match /chats/{chatId} {
+  
+  // Sólo participantes pueden leer el chat
+  allow read: if request.auth != null 
+              && request.auth.uid in resource.data.participantsUids;
+
+  // Cualquier usuario autenticado puede crear o actualizar un chat (unirse a un partido)
+  allow create, update: if request.auth != null;
+
+  // Solo el capitán puede borrar el chat
+  allow delete: if request.auth != null 
+                && resource.data.ownerId == request.auth.uid;
+
+  // Reglas para la subcolección messages
+  match /messages/{messageId} {
+    // Sólo participantes pueden crear o leer mensajes
+    allow read, create: if request.auth != null 
+                        && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantsUids;
+
+    // No se permite editar ni borrar mensajes
+    allow update, delete: if false;
   }
 }

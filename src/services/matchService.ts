@@ -1,4 +1,4 @@
-import { db } from '../Firebase/firebaseConfig';
+import { db, auth } from '../Firebase/firebaseConfig';
 import {
   collection,
   addDoc,
@@ -15,6 +15,8 @@ import {
   arrayRemove,
   increment,
   orderBy,
+  deleteDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 export interface MatchData {
@@ -273,4 +275,59 @@ export const searchMatches = async (searchTerm: string, sport?: string): Promise
     console.error("Error al buscar partidos: ", error);
     throw new Error("No se pudieron buscar los partidos.");
   }
+};
+
+/**
+ * Deletes a match and notifies the players. This is NOT an atomic operation.
+ * @param matchId - The ID of the match to delete.
+ * @returns A promise that resolves when the operation is complete.
+ */
+export const deleteMatch = async (matchId: string): Promise<void> => {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("No estás autenticado.");
+  }
+
+  const matchRef = doc(db, 'matches', matchId);
+  const matchSnap = await getDoc(matchRef);
+
+  if (!matchSnap.exists()) {
+    throw new Error("El partido no existe.");
+  }
+
+  const matchData = matchSnap.data();
+
+  if (matchData.captainId !== currentUser.uid) {
+    throw new Error("No tienes permiso para eliminar este partido.");
+  }
+
+  const playersToNotify = matchData.players.filter((pId: string) => pId !== currentUser.uid);
+
+  // Operation is not atomic. We first create notifications.
+  // If this succeeds, but deletion fails, notifications are sent but match is not deleted.
+
+  // 1. Create notifications for players
+  for (const playerId of playersToNotify) {
+    const notificationData = {
+      userId: playerId,
+      type: 'match-cancelled',
+      title: 'Partido Cancelado',
+      message: `El partido en "${matchData.courtName}" para el ${matchData.date.toDate().toLocaleDateString()} a las ${matchData.time} ha sido cancelado por el capitán.`,
+      data: {
+        matchId: matchId,
+        courtName: matchData.courtName,
+        date: matchData.date
+      },
+      read: false,
+      createdAt: serverTimestamp(),
+    };
+    await addDoc(collection(db, 'notifications'), notificationData);
+  }
+
+  // 2. Delete chat and match in a batch
+  const batch = writeBatch(db);
+  const chatRef = doc(db, 'chats', matchId);
+  batch.delete(chatRef);
+  batch.delete(matchRef);
+  await batch.commit();
 };
