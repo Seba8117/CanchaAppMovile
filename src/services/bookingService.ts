@@ -32,7 +32,7 @@ interface BookingData {
 export const createBooking = async (bookingData: BookingData) => {
   try {
     // Validar que la cancha exista y esté activa
-    const courtRef = doc(db, 'courts', bookingData.courtId);
+    const courtRef = doc(db, 'cancha', bookingData.courtId);
     const courtSnap = await getDoc(courtRef);
     if (!courtSnap.exists()) {
       throw new Error("La cancha no existe.");
@@ -42,14 +42,26 @@ export const createBooking = async (bookingData: BookingData) => {
       throw new Error("Esta cancha está desactivada y no acepta reservas.");
     }
 
-    const bookingWithTimestamp = {
-      ...bookingData,
-      date: Timestamp.fromDate(bookingData.date),
-      status: 'confirmed', // O 'pending_payment' si tienes un sistema de pago
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
+            const bookingWithTimestamp = {
+              ...bookingData,
+              date: Timestamp.fromDate(bookingData.date),
+              status: 'pending_payment',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            };
     const docRef = await addDoc(collection(db, 'bookings'), bookingWithTimestamp);
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        userId: bookingData.ownerId,
+        type: 'booking',
+        title: 'Nueva reserva recibida',
+        message: `${bookingData.playerName} reservó ${bookingData.courtName} • ${bookingData.startTime}-${bookingData.endTime} • ${bookingData.duration}h • $${bookingData.price}`,
+        data: { bookingId: docRef.id, courtId: bookingData.courtId },
+        actions: [{ key: 'confirm-booking', label: 'Confirmar' }, { key: 'reject-booking', label: 'Rechazar' }],
+        createdAt: serverTimestamp(),
+        read: false,
+      });
+    } catch {}
     return docRef.id;
   } catch (error) {
     console.error("Error al crear la reserva: ", error);

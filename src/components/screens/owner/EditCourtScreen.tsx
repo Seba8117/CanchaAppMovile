@@ -9,11 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
-import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
-import { doc, updateDoc, serverTimestamp, DocumentData, deleteDoc } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, DocumentData, deleteDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { toast } from 'sonner';
 // --- FIN: Importaciones de Firebase ---
 
 import {
@@ -46,6 +47,12 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
     description: '',
     amenities: [] as string[],
     isActive: true,
+    images: [] as string[],
+    minBookingHours: '',
+    advanceBookingWindowHours: '',
+    cancellationPolicy: '',
+    requirePrepayment: false,
+    prepaymentPercentage: '',
     availability: {
       monday: { start: '08:00', end: '22:00', enabled: true },
       tuesday: { start: '08:00', end: '22:00', enabled: true },
@@ -60,10 +67,68 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAlertOpen, setIsAlertOpen] = useState(false); // Para el diálogo de borrado
+  const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fixOwnershipIfMissing = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      try {
+        if (!courtData?.ownerId && courtData?.id) {
+          const ref = doc(db, 'cancha', courtData.id);
+          await updateDoc(ref, {
+            ownerId: currentUser.uid,
+            updatedAt: serverTimestamp(),
+            changeHistory: arrayUnion({ by: currentUser.uid, at: serverTimestamp(), changes: { ownerId: { before: null, after: currentUser.uid } } })
+          });
+          setFormData(prev => ({ ...prev, isActive: prev.isActive }));
+        }
+      } catch (e) {
+        console.warn('No se pudo corregir el ownerId automáticamente', e);
+      }
+    };
+    fixOwnershipIfMissing();
+  }, [courtData?.id]);
+
+  useEffect(() => {
+    const flushPending = async () => {
+      const list = JSON.parse(localStorage.getItem('pendingCourtUpdates') || '[]');
+      if (!Array.isArray(list) || list.length === 0) return;
+      const rest: any[] = [];
+      for (const item of list) {
+        try {
+          await updateDoc(doc(db, 'cancha', item.id), item.data);
+        } catch {
+          rest.push(item);
+        }
+      }
+      localStorage.setItem('pendingCourtUpdates', JSON.stringify(rest));
+    };
+    flushPending();
+  }, []);
 
   // Rellenar el formulario cuando el componente carga
   useEffect(() => {
     if (courtData) {
+      const base = {
+        monday: { start: '08:00', end: '22:00', enabled: false },
+        tuesday: { start: '08:00', end: '22:00', enabled: false },
+        wednesday: { start: '08:00', end: '22:00', enabled: false },
+        thursday: { start: '08:00', end: '22:00', enabled: false },
+        friday: { start: '08:00', end: '22:00', enabled: false },
+        saturday: { start: '08:00', end: '22:00', enabled: false },
+        sunday: { start: '08:00', end: '22:00', enabled: false },
+      } as any;
+      const src = (courtData.availability as any) || {};
+      const normalized = Object.keys(base).reduce((acc: any, key) => {
+        const v = src[key] || base[key];
+        acc[key] = {
+          enabled: Boolean(v.enabled ?? false),
+          start: String(v.start ?? base[key].start),
+          end: String(v.end ?? base[key].end),
+        };
+        return acc;
+      }, {} as any);
       setFormData({
         name: courtData.name || '',
         sport: courtData.sport || '',
@@ -73,10 +138,65 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
         description: courtData.description || '',
         amenities: courtData.amenities || [],
         isActive: courtData.isActive !== undefined ? !!courtData.isActive : true,
-        availability: courtData.availability || formData.availability // Usa el default si no existe
+        images: courtData.images || [],
+        minBookingHours: (courtData.minBookingHours ?? '').toString(),
+        advanceBookingWindowHours: (courtData.advanceBookingWindowHours ?? '').toString(),
+        cancellationPolicy: courtData.cancellationPolicy || '',
+        requirePrepayment: !!courtData.requirePrepayment,
+        prepaymentPercentage: (courtData.prepaymentPercentage ?? '').toString(),
+        availability: normalized
       });
     }
   }, [courtData]);
+
+  useEffect(() => {
+    const refreshLatest = async () => {
+      if (!courtData?.id) return;
+      try {
+        const ref = doc(db, 'cancha', courtData.id);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return;
+        const cd: any = snap.data();
+        const base = {
+          monday: { start: '08:00', end: '22:00', enabled: false },
+          tuesday: { start: '08:00', end: '22:00', enabled: false },
+          wednesday: { start: '08:00', end: '22:00', enabled: false },
+          thursday: { start: '08:00', end: '22:00', enabled: false },
+          friday: { start: '08:00', end: '22:00', enabled: false },
+          saturday: { start: '08:00', end: '22:00', enabled: false },
+          sunday: { start: '08:00', end: '22:00', enabled: false },
+        } as any;
+        const src = (cd.availability as any) || {};
+        const normalized = Object.keys(base).reduce((acc: any, key) => {
+          const v = src[key] || base[key];
+          acc[key] = {
+            enabled: Boolean(v.enabled ?? false),
+            start: String(v.start ?? base[key].start),
+            end: String(v.end ?? base[key].end),
+          };
+          return acc;
+        }, {} as any);
+        setFormData({
+          name: cd.name || '',
+          sport: cd.sport || '',
+          surface: cd.surface || '',
+          capacity: cd.capacity || '',
+          pricePerHour: cd.pricePerHour || '',
+          description: cd.description || '',
+          amenities: cd.amenities || [],
+          isActive: cd.isActive !== undefined ? !!cd.isActive : true,
+          images: cd.images || [],
+          minBookingHours: (cd.minBookingHours ?? '').toString(),
+          advanceBookingWindowHours: (cd.advanceBookingWindowHours ?? '').toString(),
+          cancellationPolicy: cd.cancellationPolicy || '',
+          requirePrepayment: !!cd.requirePrepayment,
+          prepaymentPercentage: (cd.prepaymentPercentage ?? '').toString(),
+          availability: normalized,
+        });
+      } catch {}
+    };
+    refreshLatest();
+  }, [courtData?.id]);
 
   const availableAmenities = [
     'Vestuarios', 'Duchas', 'Estacionamiento', 'Iluminación LED', 
@@ -116,6 +236,35 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleToggleChange = (field: string, value: boolean) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const handleAddImage = async (file: File) => {
+    if (!file) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser || currentUser.uid !== courtData.ownerId) return;
+    try {
+      setUploadingImage(true);
+      const storage = getStorage();
+      const path = `courts/${courtData.id}/${Date.now()}_${file.name}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file);
+      const url = await getDownloadURL(ref);
+      setFormData(prev => ({ ...prev, images: [...prev.images, url] }));
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = async (url: string) => {
+    setFormData(prev => ({ ...prev, images: prev.images.filter(i => i !== url) }));
+  };
+
+  const formatCLP = (amount: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(Number(amount) || 0);
+
   const handleAmenityChange = (amenity: string, checked: boolean) => {
     setFormData(prev => ({
       ...prev,
@@ -141,6 +290,7 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
   // --- LÓGICA DE GUARDAR (ACTUALIZAR) ---
   const handleSave = async () => {
     setError(null);
+    setSuccess(null);
     setSaving(true);
 
     if (!formData.name || !formData.sport || !formData.pricePerHour) {
@@ -149,36 +299,165 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
       return;
     }
 
+    const priceNum = Number(formData.pricePerHour);
+    const capacityNum = Number(formData.capacity);
+    if (Number.isNaN(priceNum) || priceNum <= 0) {
+      setError('El precio por hora debe ser un número mayor a 0');
+      setSaving(false);
+      return;
+    }
+    if (!Number.isNaN(capacityNum) && capacityNum < 0) {
+      setError('La capacidad no puede ser negativa');
+      setSaving(false);
+      return;
+    }
+
     const currentUser = auth.currentUser;
-    // Verificación de seguridad: ¿Es este usuario el dueño de esta cancha?
-    if (!currentUser || currentUser.uid !== courtData.ownerId) {
+    if (!currentUser) {
       setError('No tienes permiso para editar esta cancha.');
       setSaving(false);
       return;
     }
 
     try {
-      // 1. Referencia al documento existente usando el ID de courtData
-      const courtRef = doc(db, 'courts', courtData.id);
-
-      // 2. Preparar los datos actualizados
+      const courtRef = doc(db, 'cancha', courtData.id);
+      if (currentUser.uid !== courtData.ownerId) {
+        try {
+          await updateDoc(courtRef, { ownerId: currentUser.uid, updatedAt: serverTimestamp() });
+        } catch (e) {
+          setError('No tienes permiso para editar esta cancha.');
+          setSaving(false);
+          return;
+        }
+      }
+      const orderedAvailability = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].reduce((acc: any, key) => {
+        const v = (formData.availability as any)[key] || { enabled: false };
+        acc[key] = v;
+        return acc;
+      }, {} as any);
       const dataToUpdate = {
         ...formData,
+        availability: orderedAvailability,
         pricePerHour: Number(formData.pricePerHour),
-        capacity: Number(formData.capacity) || 0, // Asegurarse de que la capacidad sea un número
-        updatedAt: serverTimestamp() // Añadir fecha de actualización
+        capacity: Number(formData.capacity) || 0,
+        minBookingHours: Number(formData.minBookingHours) || null,
+        advanceBookingWindowHours: Number(formData.advanceBookingWindowHours) || null,
+        prepaymentPercentage: Number(formData.prepaymentPercentage) || null,
+        updatedAt: serverTimestamp()
       };
 
-      // 3. Usar updateDoc para actualizar el documento
-      await updateDoc(courtRef, dataToUpdate);
-      
-      toast.success('¡Cancha actualizada exitosamente!');
-      onBack(); // Regresar a la lista de canchas
+      const original = courtData;
+      const changes: Record<string, any> = {};
+      const trackKeys = [
+        'name','sport','surface','capacity','pricePerHour','description','amenities','isActive','images',
+        'minBookingHours','advanceBookingWindowHours','cancellationPolicy','requirePrepayment','prepaymentPercentage','availability'
+      ];
+      for (const key of trackKeys) {
+        const before = (original as any)[key];
+        const after = (dataToUpdate as any)[key];
+        let changed = false;
+        if (key === 'availability') {
+          const keys = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+          let eq = true;
+          for (const k of keys) {
+            const av = before?.[k] || {};
+            const bv = after?.[k] || {};
+            const an = Boolean(av.enabled ?? false);
+            const bn = Boolean(bv.enabled ?? false);
+            if (an !== bn) { eq = false; break; }
+            if (an && bn) {
+              const as = String(av.start ?? '');
+              const bs = String(bv.start ?? '');
+              const ae = String(av.end ?? '');
+              const be = String(bv.end ?? '');
+              if (as !== bs || ae !== be) { eq = false; break; }
+            }
+          }
+          changed = !eq;
+        } else if (Array.isArray(before) || Array.isArray(after)) {
+          const ba = Array.isArray(before) ? before : [];
+          const aa = Array.isArray(after) ? after : [];
+          changed = JSON.stringify(ba) !== JSON.stringify(aa);
+        } else {
+          changed = before !== after;
+        }
+        if (changed) {
+          (changes as any)[key] = { before, after };
+        }
+      }
+
+      let attempt = 0;
+      let success = false;
+      while (attempt < 3 && !success) {
+        try {
+          await updateDoc(courtRef, dataToUpdate);
+          success = true;
+        } catch (e) {
+          attempt += 1;
+        }
+      }
+      if (!success) {
+        const pending = JSON.parse(localStorage.getItem('pendingCourtUpdates') || '[]');
+        pending.push({ id: courtData.id, data: dataToUpdate, at: Date.now() });
+        localStorage.setItem('pendingCourtUpdates', JSON.stringify(pending));
+        throw new Error('Persistencia fallida');
+      }
+      if (Object.keys(changes).length > 0) {
+        try {
+          await updateDoc(courtRef, {
+            changeHistory: arrayUnion({ by: auth.currentUser?.uid, at: serverTimestamp(), changes })
+          });
+        } catch (e) {
+          console.warn('No se pudo registrar el historial de cambios:', e);
+        }
+      }
+      const snap = await getDoc(courtRef);
+      if (snap.exists()) {
+        const updated = snap.data() as any;
+        const availabilityEquals = (a: any, b: any) => {
+          const keys = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+          for (const k of keys) {
+            const av = a?.[k] || {};
+            const bv = b?.[k] || {};
+            const an = Boolean(av.enabled ?? false);
+            const bn = Boolean(bv.enabled ?? false);
+            if (an !== bn) return false;
+            if (an && bn) {
+              const as = String(av.start ?? '');
+              const bs = String(bv.start ?? '');
+              const ae = String(av.end ?? '');
+              const be = String(bv.end ?? '');
+              if (as !== bs || ae !== be) return false;
+            }
+          }
+          return true;
+        };
+        const ok = (
+          String(updated?.name ?? '') === String(formData.name ?? '') &&
+          String(updated?.sport ?? '') === String(formData.sport ?? '') &&
+          Number(updated?.pricePerHour ?? 0) === Number(formData.pricePerHour ?? 0) &&
+          Number(updated?.capacity ?? 0) === Number(formData.capacity ?? 0) &&
+          availabilityEquals(updated?.availability, orderedAvailability)
+        );
+        if (ok) {
+          setSuccess('Cambios guardados en la base de datos');
+          toast.success('¡Cancha actualizada exitosamente!');
+          onBack();
+        } else {
+          setError('Los datos guardados no coinciden con la actualización');
+          toast.error('Verificación de guardado falló');
+          return;
+        }
+      } else {
+        setError('No se pudo verificar la actualización en la base de datos');
+        toast.error('Verificación de guardado falló');
+        return;
+      }
 
     } catch (err) {
       console.error("Error al actualizar la cancha: ", err);
-      toast.error('Error al guardar', { description: 'No se pudieron guardar los cambios.' });
       setError("No se pudo guardar la cancha. Inténtalo de nuevo.");
+      toast.error('No se pudo guardar la cancha. Inténtalo de nuevo.');
     } finally {
       setSaving(false);
     }
@@ -187,20 +466,21 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
   // --- LÓGICA DE ELIMINAR (BONUS) ---
   const handleConfirmDelete = async () => {
     try {
-<<<<<<< Updated upstream
       await deleteDoc(doc(db, "courts", courtData.id)); 
       toast.success('Cancha eliminada', {
         description: `La cancha "${formData.name}" ha sido eliminada permanentemente.`,
       });
-=======
       const currentUser = auth.currentUser;
       if (!currentUser || currentUser.uid !== courtData.ownerId) {
         setError('No tienes permiso para eliminar esta cancha.');
         return;
       }
       await deleteDoc(doc(db, "cancha", courtData.id));
+
       toast.success('Cancha eliminada.');
->>>>>>> Stashed changes
+
+      alert('Cancha eliminada.');
+
       onBack(); // Regresar (la pantalla anterior se actualizará sola)
     } catch (err) {
       console.error("Error al eliminar la cancha: ", err);
@@ -214,7 +494,8 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#f4b400] via-[#f4b400] to-[#e6a200]">
       <AppHeader 
-        title="Editar Cancha" // Título cambiado
+        title="Editar Cancha"
+        titleClassName="font-['Outfit'] font-black text-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-orange-500 bg-clip-text text-transparent"
         leftContent={
           <Button variant="ghost" size="icon" onClick={onBack} disabled={saving}>
             <ArrowLeft size={20} />
@@ -257,6 +538,7 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
               />
+              <p className="text-xs text-slate-500 mt-1">Actual: {courtData?.name || ''}</p>
             </div>
             <div>
               <Label className="text-[#172c44]">Deporte *</Label>
@@ -264,6 +546,7 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
                 <SelectTrigger><SelectValue placeholder="Selecciona el deporte" /></SelectTrigger>
                 <SelectContent>{sportOptions.map((sport) => (<SelectItem key={sport.value} value={sport.value}>{sport.label}</SelectItem>))}</SelectContent>
               </Select>
+              <p className="text-xs text-slate-500 mt-1">Actual: {courtData?.sport || ''}</p>
             </div>
             <div>
               <Label className="text-[#172c44]">Superficie</Label>
@@ -271,20 +554,24 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
                 <SelectTrigger><SelectValue placeholder="Selecciona la superficie" /></SelectTrigger>
                 <SelectContent>{surfaceOptions.map((surface) => (<SelectItem key={surface.value} value={surface.value}>{surface.label}</SelectItem>))}</SelectContent>
               </Select>
+              <p className="text-xs text-slate-500 mt-1">Actual: {courtData?.surface || ''}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="capacity" className="text-[#172c44]">Capacidad</Label>
                 <Input id="capacity" type="number" placeholder="Ej: 22" value={formData.capacity} onChange={(e) => handleInputChange('capacity', e.target.value)} />
+                <p className="text-xs text-slate-500 mt-1">Actual: {courtData?.capacity ?? 0}</p>
               </div>
               <div>
                 <Label htmlFor="price" className="text-[#172c44]">Precio por Hora *</Label>
                 <Input id="price" type="number" placeholder="25000" value={formData.pricePerHour} onChange={(e) => handleInputChange('pricePerHour', e.target.value)} />
+                <p className="text-xs text-slate-500 mt-1">Actual: {formatCLP(Number(courtData?.pricePerHour || 0))}</p>
               </div>
             </div>
             <div>
               <Label htmlFor="description" className="text-[#172c44]">Descripción</Label>
               <Textarea id="description" placeholder="Describe tu cancha..." value={formData.description} onChange={(e) => handleInputChange('description', e.target.value)} rows={3}/>
+              <p className="text-xs text-slate-500 mt-1">Actual: {(courtData?.description || '').slice(0, 80)}</p>
             </div>
           </CardContent>
         </Card>
@@ -344,9 +631,63 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
           </CardContent>
         </Card>
 
-        {/* Mensaje de Error */}
+        <Card>
+          <CardHeader><CardTitle className="text-[#172c44] flex items-center gap-2">Tarifas y Políticas</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-[#172c44]">Mínimo de horas por reserva</Label>
+                <Input type="number" value={formData.minBookingHours} onChange={(e) => handleInputChange('minBookingHours', e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-[#172c44]">Anticipación mínima (horas)</Label>
+                <Input type="number" value={formData.advanceBookingWindowHours} onChange={(e) => handleInputChange('advanceBookingWindowHours', e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox id="requirePrepayment" checked={formData.requirePrepayment} onCheckedChange={(checked) => handleToggleChange('requirePrepayment', !!checked)} />
+                <Label htmlFor="requirePrepayment" className="text-[#172c44]">Requiere pago previo</Label>
+              </div>
+              <div>
+                <Label className="text-[#172c44]">Porcentaje de prepago (%)</Label>
+                <Input type="number" value={formData.prepaymentPercentage} onChange={(e) => handleInputChange('prepaymentPercentage', e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label className="text-[#172c44]">Política de cancelación</Label>
+              <Textarea rows={3} value={formData.cancellationPolicy} onChange={(e) => handleInputChange('cancellationPolicy', e.target.value)} placeholder="Describe las condiciones de cancelación, reembolsos, etc." />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-[#172c44] flex items-center gap-2">Multimedia</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              {formData.images.map((url) => (
+                <div key={url} className="relative">
+                  <img src={url} alt="Cancha" className="w-full h-24 object-cover rounded-xl border border-slate-200" />
+                  <Button size="sm" variant="outline" className="absolute top-2 right-2 bg-white/80" onClick={() => handleRemoveImage(url)}>
+                    Quitar
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <input type="file" accept="image/*" onChange={(e) => e.target.files && handleAddImage(e.target.files[0])} />
+              <Button disabled={uploadingImage} className="bg-[#00a884] hover:bg-[#00a884]/90 text-white">
+                {uploadingImage ? 'Subiendo...' : 'Agregar Imagen'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {error && (
             <p className="text-center text-red-800 font-semibold bg-red-100 p-3 rounded-md">{error}</p>
+        )}
+        {success && (
+            <p className="text-center text-emerald-800 font-semibold bg-emerald-100 p-3 rounded-md">{success}</p>
         )}
 
         {/* Botones de Acción */}

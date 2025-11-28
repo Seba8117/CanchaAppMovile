@@ -66,7 +66,7 @@ export const createMatch = async (matchData: MatchData) => {
  */
 export const getAllCourts = async (): Promise<DocumentData[]> => {
   try {
-    const courtsRef = collection(db, 'courts');
+    const courtsRef = collection(db, 'cancha');
     const q = query(courtsRef, where('isActive', '==', true));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -189,10 +189,7 @@ export const leaveMatch = async (matchId: string, playerId: string): Promise<boo
     
     // Verificar si el jugador es el capitán
     if (matchData.captainId === playerId) {
-      // Permitir que el capitán elimine a otros, pero no a sí mismo
-      if (matchData.captainId === auth.currentUser?.uid) {
-        throw new Error("El capitán no puede abandonar el partido. Cancela el partido si es necesario.");
-      }
+      throw new Error("El capitán no puede abandonar el partido. Cancela el partido si es necesario.");
     }
     
     // Remover el jugador del partido

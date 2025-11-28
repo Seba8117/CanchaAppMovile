@@ -31,7 +31,7 @@ export function SearchCourtsScreen({ onNavigate, onBack }: SearchCourtsScreenPro
     setLoading(true);
     setError(null);
     try {
-      const courtsRef = collection(db, 'courts');
+      const courtsRef = collection(db, 'cancha');
       // Para evitar índices compuestos, consultamos solo canchas activas y filtramos por deporte en cliente.
       const q = query(courtsRef, where('isActive', '==', true));
       const querySnapshot = await getDocs(q);
@@ -54,7 +54,7 @@ export function SearchCourtsScreen({ onNavigate, onBack }: SearchCourtsScreenPro
     const fetchInitialCourts = async () => {
       setLoading(true);
       try {
-        const courtsRef = collection(db, 'courts');
+        const courtsRef = collection(db, 'cancha');
         // Mostrar solo canchas activas en la carga inicial
         const q = query(courtsRef, where('isActive', '==', true));
         const querySnapshot = await getDocs(q); // Debería tener un limit() en una app real

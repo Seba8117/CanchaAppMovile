@@ -8,11 +8,10 @@ import { Badge } from '../../ui/badge';
 import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { AppHeader } from '../../common/AppHeader';
-import { createMatch, getAllCourts, MatchData } from '../../../services/matchService';
-import { getBookingsForDate } from '../../../services/bookingService'; // <-- IMPORTACIÓN AÑADIDA
-import { toast } from 'sonner';
-import { auth, db } from '../../../Firebase/firebaseConfig'; 
-import { DocumentData, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { createMatch, getAllCourts } from '../../../services/matchService';
+import { auth, db } from '../../../Firebase/firebaseConfig';
+import { startMatchCheckout } from '../../../services/paymentService';
+import { DocumentData, collection, query, where, getDocs, Timestamp, doc, setDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 interface CreateMatchScreenProps {
   onBack: () => void;
@@ -24,8 +23,11 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const [selectedCourtId, setSelectedCourtId] = useState('');
   const [includeMyTeam, setIncludeMyTeam] = useState(false);
   const [courts, setCourts] = useState<DocumentData[]>([]);
+  const [myTeams, setMyTeams] = useState<any[]>([]);
+  const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paymentMode, setPaymentMode] = useState<'immediate' | 'deferred'>('deferred');
 
   // State for match details
   const [matchDate, setMatchDate] = useState('');
@@ -35,35 +37,14 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const [pricePerPlayer, setPricePerPlayer] = useState(5000);
   const [description, setDescription] = useState('');
 
-  // Mock user's teams where they are captain
-  const myTeamsAsCaptain = [
-    {
-      id: 1,
-      name: 'Los Tigres FC',
-      sport: 'football',
-      members: 8,
-      maxMembers: 11,
-      image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200&h=200&fit=crop'
-    },
-    {
-      id: 2,
-      name: 'Águilas Basket',
-      sport: 'basketball',
-      members: 5,
-      maxMembers: 7,
-      image: undefined
-    }
-  ];
-
-  // Get teams that match the selected sport
-  const compatibleTeams = myTeamsAsCaptain.filter(team => team.sport === selectedSport);
+  const compatibleTeams = myTeams.filter(team => (team.sport?.toLowerCase?.() || '') === selectedSport);
   const selectedTeam = compatibleTeams.length > 0 ? compatibleTeams[0] : null;
 
   const sports = [
-    { id: 'futbol', name: 'Fútbol', icon: '⚽' },
-    { id: 'basquet', name: 'Básquetball', icon: '🏀' },
-    { id: 'tenis', name: 'Tenis', icon: '🎾' },
-    { id: 'volley', name: 'Vóleibol', icon: '🏐' },
+    { id: 'football', name: 'Fútbol', icon: '⚽' },
+    { id: 'basketball', name: 'Básquetball', icon: '🏀' },
+    { id: 'tennis', name: 'Tenis', icon: '🎾' },
+    { id: 'volleyball', name: 'Volleyball', icon: '🏐' },
     { id: 'padel', name: 'Pádel', icon: '🏓' },
     { id: 'futsal', name: 'Futsal', icon: '⚽' },
   ];
@@ -86,8 +67,41 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     loadCourts();
   }, []);
 
-  // Filtrar canchas según el deporte seleccionado
-  const filteredCourts = courts.filter(court => court.sport === selectedSport);
+  useEffect(() => {
+    const loadTeams = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const q = query(collection(db, 'teams'), where('captainId', '==', user.uid), where('status', '==', 'active'));
+        const snap = await getDocs(q);
+        const teamsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setMyTeams(teamsData);
+      } catch {}
+    };
+    loadTeams();
+  }, []);
+
+  useEffect(() => {
+    const checkAvailability = async () => {
+      if (!selectedCourtId || !matchDate) return;
+      setOccupiedSlots([]);
+      try {
+        const startOfDay = new Date(matchDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(matchDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        const q = query(collection(db, 'matches'), where('courtId', '==', selectedCourtId), where('date', '>=', Timestamp.fromDate(startOfDay)), where('date', '<=', Timestamp.fromDate(endOfDay)));
+        const querySnapshot = await getDocs(q);
+        const slots: string[] = [];
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (data.time) slots.push(data.time);
+        });
+        setOccupiedSlots(slots);
+      } catch {}
+    };
+    checkAvailability();
+  }, [selectedCourtId, matchDate]);
 
   // Efecto para calcular el precio por jugador automáticamente
   useEffect(() => {
@@ -99,9 +113,18 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     }
   }, [maxPlayers, selectedCourtId, matchDuration, courts]);
 
-  const timeSlots = [
-    '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'
-  ];
+  const getAvailableTimeSlots = () => {
+    const court = courts.find(c => c.id === selectedCourtId);
+    if (!court) return [];
+    const startHour = court.openingTime ? parseInt(String(court.openingTime).split(':')[0]) : 8;
+    const endHour = court.closingTime ? parseInt(String(court.closingTime).split(':')[0]) : 23;
+    const slots: string[] = [];
+    for (let i = startHour; i < endHour; i++) {
+      const t = `${String(i).padStart(2, '0')}:00`;
+      if (!occupiedSlots.includes(t)) slots.push(t);
+    }
+    return slots;
+  };
 
   const renderStep1 = () => (
     <div className="space-y-6">
@@ -136,45 +159,38 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     <div className="space-y-6">
       <h2 className="text-white mb-4">Selecciona una cancha</h2>
       <div className="space-y-3">
-        {filteredCourts.length > 0 ? (
-          filteredCourts.map((court) => (
-            <Card 
-              key={court.id} 
-              className={`cursor-pointer transition-colors ${
-                selectedCourtId === court.id
-                  ? 'border-[#f4b400] bg-[#f4b400]'
-                  : 'border-gray-200'
-              }`}
-              onClick={() => setSelectedCourtId(court.id)}
-            >
-              <CardContent className="p-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-[#172c44] mb-1">{court.name}</h3>
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <MapPin size={14} />
-                        <span>{court.location?.address || 'Ubicación no disponible'}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span>⭐ {court.rating || 'N/A'}</span>
-                      </div>
+        {courts.map((court) => (
+          <Card 
+            key={court.id} 
+            className={`cursor-pointer transition-colors ${
+              selectedCourtId === court.id
+                ? 'border-[#f4b400] bg-[#f4b400]'
+                : 'border-gray-200'
+            }`}
+            onClick={() => setSelectedCourtId(court.id)}
+          >
+            <CardContent className="p-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-[#172c44] mb-1">{court.name}</h3>
+                  <div className="flex items-center gap-4 text-sm text-gray-600">
+                    <div className="flex items-center gap-1">
+                      <MapPin size={14} />
+                      <span>{court.location?.address || 'Ubicación no disponible'}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span>⭐ {court.rating || 'N/A'}</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[#00a884]">${court.pricePerHour?.toLocaleString() || 'N/A'}</p>
-                    <p className="text-xs text-gray-600">por hora</p>
-                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <div className="text-center py-8 bg-white/10 rounded-lg">
-            <p className="text-white">No hay canchas disponibles para este deporte.</p>
-            <p className="text-gray-300 text-sm">Intenta seleccionar otro deporte.</p>
-          </div>
-        )}
+                <div className="text-right">
+                  <p className="text-[#00a884]">${court.pricePerHour?.toLocaleString() || 'N/A'}</p>
+                  <p className="text-xs text-gray-600">por hora</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
       <div className="flex gap-3">
         <Button 
@@ -222,10 +238,8 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
               <SelectValue placeholder="Selecciona una hora" />
             </SelectTrigger>
             <SelectContent>
-              {timeSlots.map((time) => (
-                <SelectItem key={time} value={time}>
-                  {time}
-                </SelectItem>
+              {getAvailableTimeSlots().map((time) => (
+                <SelectItem key={time} value={time}>{time}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -256,11 +270,9 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
               <Button
                 key={num}
                 variant="outline"
-                className={`aspect-square transition-colors ${
-                  maxPlayers === num
-                    ? 'bg-[#f4b400] text-[#172c44] border-[#f4b400] font-bold'
-                    : 'bg-white/20 text-white border-white/30 hover:bg-white/30'
-                }`}
+                className={`${maxPlayers === num
+                  ? 'aspect-square bg-[#f4b400] text-[#172c44] border-transparent'
+                  : 'aspect-square bg-white/20 text-white border-white/30 hover:bg-white/30'} `}
                 onClick={() => setMaxPlayers(num)}
               >
                 {num}
@@ -398,16 +410,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     setLoading(true);
     setError(null);
 
-    try {
-      // --- VALIDACIÓN DE DISPONIBILIDAD ---
-      const selectedDateTime = new Date(matchDate + 'T' + matchTime);
-      const existingBookings = await getBookingsForDate(selectedCourtId, selectedDateTime);
-      const isSlotTaken = existingBookings.some(booking => booking.startTime === matchTime);
-
-      if (isSlotTaken) {
-        throw new Error(`La cancha ya está reservada a las ${matchTime}. Por favor, elige otro horario.`);
-      }
-    const matchData: MatchData = {
+    const matchData: any = {
       sport: selectedSport,
       courtId: selectedCourtId,
       courtName: court.name,
@@ -419,34 +422,76 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       pricePerPlayer: pricePerPlayer,
       description: description,
       captainId: currentUser.uid,
-      captainName: await getCurrentUserName(currentUser.uid), // <-- CORRECCIÓN
+      captainName: currentUser.displayName || "Capitán Anónimo",
+      status: 'open',
+      players: [currentUser.uid],
+      currentPlayers: 1,
+      totalCost: (courts.find(c => c.id === selectedCourtId)?.pricePerHour || 0) * matchDuration,
+      paymentStatus: 'pending'
     };
 
-      const matchId = await createMatch(matchData);
+    // Añadir información del equipo si está incluido
+    if (includeMyTeam && selectedTeam) {
+      matchData.teamId = selectedTeam.id;
+      matchData.teamName = selectedTeam.name;
+    }
 
-      // Crear el chat para el partido
-      const chatRef = doc(db, "chats", matchId);
+    try {
+      let initialPlayers = [currentUser.uid];
+      if (includeMyTeam && selectedTeam && Array.isArray(selectedTeam.members)) {
+        initialPlayers = Array.from(new Set([...initialPlayers, ...selectedTeam.members]));
+        matchData.players = initialPlayers;
+        matchData.currentPlayers = initialPlayers.length;
+        matchData.teamId = selectedTeam.id;
+        matchData.teamName = selectedTeam.name;
+      }
+      const matchId = await createMatch(matchData);
+      if (initialPlayers.length > 1) {
+        const matchRef = doc(db, 'matches', matchId);
+        await updateDoc(matchRef, { players: initialPlayers, currentPlayers: initialPlayers.length });
+      }
+      const chatParticipants = [...initialPlayers];
+      if (court.ownerId) {
+        chatParticipants.push(court.ownerId);
+      }
+      const uniqueParticipants = Array.from(new Set(chatParticipants));
+      const chatRef = doc(db, 'chats', matchId);
+      // TTL: 7 días post-finalización
+      const matchEnd = new Date(matchData.date);
+      matchEnd.setHours(matchEnd.getHours() + (Number(matchData.duration) || 1));
+      const expiresDate = new Date(matchEnd.getTime() + 7 * 24 * 60 * 60 * 1000);
       await setDoc(chatRef, {
         id: matchId,
-        name: `Partido - ${court.name}`,
         type: 'match',
-        participantsUids: [currentUser.uid],
-        ownerId: currentUser.uid,
-        lastMessage: '¡Partido creado! Invita a tus amigos a unirse.',
+        name: `Partido en ${court.name}`,
+        participantsUids: uniqueParticipants,
+        lastMessage: '¡Partido creado!',
         lastMessageTimestamp: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        ownerId: currentUser.uid,
+        matchId: matchId,
+        sport: selectedSport,
+        expiresAt: Timestamp.fromDate(expiresDate)
+      });
+      const messagesRef = collection(db, 'chats', matchId, 'messages');
+      await addDoc(messagesRef, {
+        text: includeMyTeam ? 'El equipo ha sido unido automáticamente.' : 'Coordinen aquí los detalles.',
+        senderId: 'system',
+        senderName: 'Sistema',
+        createdAt: serverTimestamp(),
+        system: true
       });
 
-      toast.success("¡Partido creado exitosamente!", {
-        description: `Tu partido en "${court.name}" ha sido publicado.`,
-      });
-<<<<<<< Updated upstream
       onBack(); // Vuelve a la pantalla de inicio
 =======
+=======
+
       if (paymentMode === 'immediate') {
         try {
           await updateDoc(doc(db, 'matches', matchId), { paymentStatus: 'pending' });
           await startMatchCheckout({ matchId, title: `Partido en ${court.name}`, price: (court.pricePerHour || 0) * matchDuration, payerEmail: currentUser.email || null });
         } catch {
+
           toast.error('No se pudo iniciar el pago. El partido quedó con pago pendiente.');
           onBack();
         }
@@ -454,26 +499,22 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
         toast.success('¡Partido creado! Podrás pagar antes de iniciar el partido.');
         onBack();
       }
->>>>>>> Stashed changes
+
+=======
+          alert('No se pudo iniciar el pago. El partido quedó con pago pendiente.');
+          onBack();
+        }
+      } else {
+        alert('¡Partido creado! Podrás pagar antes de iniciar el partido.');
+        onBack();
+      }
+
     } catch (err: any) {
       setError(err.message || 'Error al crear el partido');
-      toast.error('No se pudo publicar el partido', { description: err.message });
     } finally {
       setLoading(false);
     }
   };
-
-  // Función para obtener el nombre del usuario desde Firestore
-  const getCurrentUserName = async (uid: string): Promise<string> => {
-    const userDocRef = doc(db, 'jugador', uid);
-    const userDocSnap = await getDoc(userDocRef);
-    if (userDocSnap.exists()) {
-      return userDocSnap.data().name || 'Capitán Anónimo';
-    }
-    // Fallback si no se encuentra en 'jugador'
-    return auth.currentUser?.displayName || 'Capitán Anónimo';
-  };
-
 
   const renderStep4 = () => {
     const court = courts.find(c => c.id === selectedCourtId);
@@ -516,6 +557,13 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           <div className="flex justify-between border-t pt-2">
             <span className="text-[#172c44]">Total arriendo cancha:</span>
             <span className="text-[#172c44] font-bold">${totalCost?.toLocaleString() || 'N/A'}</span>
+          </div>
+          <div className="flex justify-between border-t pt-2">
+            <span className="text-[#172c44]">Modo de pago:</span>
+            <div className="flex items-center gap-2">
+              <button className={`${paymentMode === 'deferred' ? 'bg-[#00a884] text-white' : 'bg-gray-200 text-[#172c44]'} px-3 py-1 rounded`} onClick={() => setPaymentMode('deferred')}>Diferido</button>
+              <button className={`${paymentMode === 'immediate' ? 'bg-[#00a884] text-white' : 'bg-gray-200 text-[#172c44]'} px-3 py-1 rounded`} onClick={() => setPaymentMode('immediate')}>Inmediato</button>
+            </div>
           </div>
         </CardContent>
       </Card>

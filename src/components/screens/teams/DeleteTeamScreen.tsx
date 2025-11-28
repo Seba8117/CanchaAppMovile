@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 import { ArrowLeft, AlertTriangle, Users, Check, X, Clock, Mail, Bell } from 'lucide-react';
 import { notificationService } from '../../common/NotificationHelper';
 import { deleteTeam } from '../../../services/teamService';
-import { toast } from 'sonner';
 
 interface TeamMember {
   id: string; // Cambiado de number a string para compatibilidad con Firebase

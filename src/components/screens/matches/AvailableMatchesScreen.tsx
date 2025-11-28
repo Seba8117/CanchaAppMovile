@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 import { ArrowLeft, Search, Filter, MapPin, Clock, Users, Calendar, Trophy } from 'lucide-react';
 import { AppHeader } from '../../common/AppHeader';
 import { getAvailableMatches, joinMatch, searchMatches } from '../../../services/matchService';
-import { toast } from 'sonner';
 
 interface Match {
   id: string;
@@ -100,15 +99,18 @@ export function AvailableMatchesScreen({ onBack, onNavigate }: AvailableMatchesS
       setMatches(updatedMatches as Match[]);
       
       // Mostrar mensaje de éxito
-      toast.success('¡Te has unido al partido exitosamente!');
+      alert('¡Te has unido al partido exitosamente!');
       
     } catch (error) {
       console.error('Error al unirse al partido:', error);
-<<<<<<< Updated upstream
+
       toast.error('Error al unirse', { description: error instanceof Error ? error.message : 'No se pudo unir al partido.' });
 =======
       toast.error(error instanceof Error ? error.message : 'Error al unirse al partido');
->>>>>>> Stashed changes
+
+=======
+      alert(error instanceof Error ? error.message : 'Error al unirse al partido');
+
     } finally {
       setJoiningMatchId(null);
     }

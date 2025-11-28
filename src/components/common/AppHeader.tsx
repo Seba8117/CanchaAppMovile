@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '../ui/button';
-import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
+import logoIcon from '../../assets/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
 
 interface AppHeaderProps {
   title: string;

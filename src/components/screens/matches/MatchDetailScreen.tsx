@@ -1,25 +1,20 @@
-<<<<<<< Updated upstream
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye, Loader2 } from 'lucide-react';
 =======
 import { ArrowLeft, MapPin, Calendar, Clock, Users, Star, Share2, Heart, Eye, Loader2, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
->>>>>>> Stashed changes
+
 import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
-import { Timestamp, doc, getDoc } from 'firebase/firestore';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
-<<<<<<< Updated upstream
 =======
 import { useEffect, useState } from 'react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../ui/alert-dialog';
-import { getMatchById, deleteMatch } from '../../../services/matchService';
+import { getMatchById } from '../../../services/matchService';
 import { getUserLocationCached, haversineKm, mapsUrlFor } from '../../../services/locationService';
->>>>>>> Stashed changes
+
 import { auth, db } from '../../../Firebase/firebaseConfig';
-import { toast } from 'sonner';
-import { joinMatch } from '../../../services/matchService';
+import { doc, getDoc, updateDoc, setDoc, collection, addDoc, serverTimestamp, arrayUnion, increment } from 'firebase/firestore';
+import { startMatchCheckout, checkPaymentStatus } from '../../../services/paymentService';
 
 interface MatchDetailScreenProps {
   match: any;
@@ -29,7 +24,6 @@ interface MatchDetailScreenProps {
 }
 
 export function MatchDetailScreen({ match, onBack, onNavigate, userType }: MatchDetailScreenProps) {
-<<<<<<< Updated upstream
   const [currentMatch, setCurrentMatch] = useState(match); // Estado local para el partido
   const [playerDetails, setPlayerDetails] = useState<any[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
@@ -39,7 +33,6 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
   const currentUser = auth.currentUser;
   const isUserInMatch = currentUser && currentMatch.players?.includes(currentUser.uid);
   const isMatchFull = currentMatch.currentPlayers >= currentMatch.maxPlayers;
-=======
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(match || null);
@@ -49,66 +42,66 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
   const [captainDisplayName, setCaptainDisplayName] = useState<string | null>(null);
   const [starting, setStarting] = useState<boolean>(false);
   const [paymentStatusLocal, setPaymentStatusLocal] = useState<string | null>(null);
+
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [playersDetails, setPlayersDetails] = useState<any[]>([]);
->>>>>>> Stashed changes
+
+=======
+
 
   useEffect(() => {
-    const fetchPlayerDetails = async () => {
-      if (!currentMatch.players || currentMatch.players.length === 0) {
-        setLoadingPlayers(false);
-        return;
-      }
-      setLoadingPlayers(true);
+    const mustFetch = !!match?.id && (!match?.courtName || !match?.players);
+    const fetchData = async () => {
       try {
-<<<<<<< Updated upstream
         const playerPromises = currentMatch.players.map(async (playerId: string) => {
           const playerDocRef = doc(db, 'jugador', playerId);
           const playerDocSnap = await getDoc(playerDocRef);
           if (playerDocSnap.exists()) {
             return { id: playerId, ...playerDocSnap.data() };
+          }
+          return { id: playerId, name: 'Jugador Desconocido', rating: 0 };
+        });
+        const players = await Promise.all(playerPromises);
+        setPlayerDetails(players);
+      } catch (error) {
+        console.error("Error fetching player details:", error);
 =======
+        setLoading(true);
+        setError(null);
+        const fresh = await getMatchById(match.id);
+        setData(fresh || match);
+      } catch (err: any) {
+        setError(err.message || 'No se pudo cargar el partido.');
+
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (mustFetch) fetchData();
+    else setData(match);
+  }, [match?.id]);
+
+  useEffect(() => {
+    const getLoc = async () => {
+      const loc = await getUserLocationCached();
+      setUserLocation(loc);
+    };
+    getLoc();
+  }, []);
+
+  useEffect(() => {
+    const loadCaptain = async () => {
+      try {
         const capId = data?.captainId || data?.ownerId;
         if (!capId) return;
-
-        let userDoc = await getDoc(doc(db, 'jugador', capId));
-        let name = null;
-
-        if (userDoc.exists()) {
-          name = userDoc.data().name;
-        } else {
-          userDoc = await getDoc(doc(db, 'dueno', capId));
-          if (userDoc.exists()) {
-            name = userDoc.data().ownerName;
-          }
-        }
-        
+        const ref = doc(db, 'users', capId);
+        const snap = await getDoc(ref);
+        const name = snap.exists() ? (snap.data() as any)?.displayName : null;
         setCaptainDisplayName(name || data?.captainName || null);
       } catch {}
     };
     loadCaptain();
   }, [data?.captainId, data?.ownerId, data?.captainName]);
-
-  useEffect(() => {
-    const fetchPlayerDetails = async () => {
-      if (data?.players && data.players.length > 0) {
-        const playerPromises = data.players.map(async (playerId: string) => {
-          let userDoc = await getDoc(doc(db, 'jugador', playerId));
-          if (userDoc.exists()) {
-            return { id: userDoc.id, ...userDoc.data(), displayName: userDoc.data().name };
-          }
-          userDoc = await getDoc(doc(db, 'dueno', playerId));
-          if (userDoc.exists()) {
-            return { id: userDoc.id, ...userDoc.data(), displayName: userDoc.data().ownerName };
-          }
-          return { id: playerId, displayName: 'Jugador Anónimo' };
-        });
-        const playersData = await Promise.all(playerPromises);
-        setPlayersDetails(playersData);
-      }
-    };
-    fetchPlayerDetails();
-  }, [data?.players]);
 
   const handleViewAllClick = () => {
     const now = Date.now();
@@ -188,78 +181,93 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             await startMatchCheckout({ matchId, title: `Pago de partido`, price: totalCost, payerEmail: auth?.currentUser?.email || null });
             setStarting(false);
             return;
->>>>>>> Stashed changes
           }
-          return { id: playerId, name: 'Jugador Desconocido', rating: 0 };
-        });
-        const players = await Promise.all(playerPromises);
-        setPlayerDetails(players);
-      } catch (error) {
-        console.error("Error fetching player details:", error);
-      } finally {
-        setLoadingPlayers(false);
+        } catch {
+          await startMatchCheckout({ matchId, title: `Pago de partido`, price: totalCost, payerEmail: auth?.currentUser?.email || null });
+          setStarting(false);
+          return;
+        }
       }
-    };
-
-    fetchPlayerDetails();
-  }, [currentMatch.players]);
+      await updateDoc(doc(db, 'matches', matchId), { status: 'active', paymentStatus: 'approved' });
+      try {
+        const paymentsRef = collection(db, 'payments');
+        await addDoc(paymentsRef, {
+          matchId,
+          userId: ownerId,
+          status: 'approved',
+          amount: totalCost,
+          createdAt: serverTimestamp(),
+        });
+      } catch {}
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: ownerId,
+          type: 'payment',
+          title: 'Pago confirmado',
+          message: 'Puedes iniciar el partido. Pago aprobado.',
+          data: { matchId },
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch {}
+      setStarting(false);
+      onNavigate && onNavigate('match-players', data);
+    } catch (e: any) {
+      setStarting(false);
+      setError(e?.message || 'No se pudo iniciar el partido.');
+    }
+  };
 
   const handleJoinMatch = async () => {
-    if (!currentUser) {
-      setJoinError("Debes iniciar sesión para unirte.");
-      return;
-    }
-    setIsJoining(true);
-    setJoinError(null);
     try {
-      await joinMatch(match.id, currentUser.uid, currentUser.displayName || 'Jugador Anónimo');
-
-      // Obtener el nombre real del usuario desde Firestore
-      const userDocRef = doc(db, 'jugador', currentUser.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      let currentUserName = 'Jugador Anónimo';
-      if (userDocSnap.exists()) {
-        currentUserName = userDocSnap.data().name || 'Jugador Anónimo';
+      const uid = auth?.currentUser?.uid;
+      if (!uid) { setError('Debes iniciar sesión para unirte.'); return; }
+      if (!matchId) { setError('No se encontró el ID del partido.'); return; }
+      setJoining(true);
+      const matchRef = doc(db, 'matches', matchId);
+      const snap = await getDoc(matchRef);
+      if (!snap.exists()) { throw new Error('Este partido ya no existe.'); }
+      const m = snap.data() as any;
+      const playersList: string[] = m.players || [];
+      if ((playersList.length || 0) >= (m.maxPlayers || maxPlayers)) { throw new Error('¡Lo sentimos! El partido ya está lleno.'); }
+      if (playersList.includes(uid)) { handleGoToChat(); setJoining(false); return; }
+      await updateDoc(matchRef, { players: arrayUnion(uid), currentPlayers: increment(1) });
+      const chatRef = doc(db, 'chats', matchId);
+      const chatSnap = await getDoc(chatRef);
+      const allParticipants = Array.from(new Set([ownerId, ...playersList, uid].filter(Boolean)));
+      if (chatSnap.exists()) {
+        await updateDoc(chatRef, { participantsUids: allParticipants });
+      } else {
+        await setDoc(chatRef, {
+          id: matchId,
+          name: `Partido - ${m.courtName || 'Chat de Partido'}`,
+          type: 'match',
+          participantsUids: allParticipants,
+          ownerId: ownerId,
+          lastMessage: `${auth?.currentUser?.displayName || 'Un jugador'} se ha unido al chat.`,
+          lastMessageTimestamp: serverTimestamp(),
+        });
       }
-
-      // Actualizar el estado local para reflejar el cambio inmediatamente
-      const newPlayer = {
-        id: currentUser.uid,
-        name: currentUserName, // <-- CORRECCIÓN
-        rating: 0, // O buscar el rating real si es necesario
-      };
-      
-      setPlayerDetails(prevDetails => [...prevDetails, newPlayer]);
-      setCurrentMatch((prevMatch: any) => ({
-        ...prevMatch,
-        players: [...prevMatch.players, currentUser.uid],
-        currentPlayers: prevMatch.currentPlayers + 1,
-      }));
-
-      toast.success("¡Te has unido al partido!", {
-        description: `Ahora eres parte del partido en "${currentMatch.courtName}".`,
-      });
-
-    } catch (error: any) {
-      setJoinError(error.message || "No se pudo unir al partido.");
-    } finally {
-      setIsJoining(false);
+      try {
+        const creatorId = ownerId;
+        if (creatorId) {
+          await addDoc(collection(db, 'notifications'), {
+            userId: creatorId,
+            type: 'match-join',
+            title: 'Nuevo jugador se unió',
+            message: `${auth?.currentUser?.displayName || 'Jugador'} se unió a tu partido en ${m.courtName || m.location?.name || 'Cancha'}`,
+            data: { matchId },
+            createdAt: serverTimestamp(),
+            read: false,
+          });
+        }
+      } catch {}
+      setJoining(false);
+      onNavigate && onNavigate('chat');
+    } catch (err: any) {
+      setJoining(false);
+      setError(err?.message || 'No se pudo unir al partido.');
     }
-  };
-
-  // Función para formatear fechas de Firestore
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'Fecha no disponible';
-    const date = timestamp instanceof Timestamp ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
-  };
-
-  // Buscar los detalles del capitán en la lista de jugadores cargada
-  const captainDetails = playerDetails.find(p => p.id === currentMatch.captainId);
-
-  const getInitials = (name: string) => {
-    if (!name) return '?';
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
   const handleDeleteMatch = () => {
@@ -284,6 +292,23 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884]">
+      {loading && (
+        <div className="fixed inset-0 flex items-center justify-center">
+          <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 text-center shadow">
+            <Loader2 className="h-8 w-8 animate-spin text-[#172c44] mx-auto mb-2" />
+            <p className="text-[#172c44] font-semibold">Cargando partido...</p>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="fixed inset-0 flex items-center justify-center">
+          <div className="bg-red-50 rounded-xl p-6 text-center border border-red-200">
+            <AlertCircle className="h-8 w-8 text-red-600 mx-auto mb-2" />
+            <p className="text-red-700 font-semibold">{error}</p>
+            <Button variant="outline" className="mt-3" onClick={onBack}>Volver</Button>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="bg-white">
         <div className="flex items-center justify-between p-4">
@@ -308,42 +333,47 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
           <CardContent className="p-6">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <Badge className="bg-[#f4b400] text-[#172c44] mb-2">
-                  {currentMatch.sport}
-                </Badge>
-                <h2 className="text-[#172c44] mb-1">{currentMatch.courtName || 'Cancha sin nombre'}</h2>
+                <Badge className="bg-[#f4b400] text-[#172c44] mb-2">{String(data?.sport || 'Deporte')}</Badge>
+                <h2 className="text-[#172c44] mb-1">{locationText(data?.location)}</h2>
                 <div className="flex items-center gap-1">
                   <Star className="text-[#f4b400]" size={14} fill="currentColor" />
-                  <span className="text-sm text-gray-600">{currentMatch.rating || 'N/A'} • Cancha verificada</span>
+                  <span className="text-sm text-gray-600">{String(data?.rating || 'N/A')} • Cancha verificada</span>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl text-[#00a884] mb-1">${currentMatch.pricePerPlayer?.toLocaleString() || '0'}</p>
+                <p className="text-2xl text-[#00a884] mb-1">{formatCLP(pricePerPlayer)}</p>
                 <p className="text-sm text-gray-600">por jugador</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="flex items-center gap-2">
                 <Calendar className="text-[#172c44]" size={16} />
-<<<<<<< Updated upstream
                 <span className="text-sm">{formatDate(currentMatch.date)}</span>
               </div>
 =======
                 <span className="text-sm">{matchDate ? matchDate.toLocaleDateString() : 'Fecha no definida'}</span>
           </div>
->>>>>>> Stashed changes
+          {isOwner && (
+            <div className="mt-3">
+              <Button className="w-full bg-[#00a884] hover:bg-[#008f73] text-white" onClick={handleStartMatch} disabled={starting}>
+                {starting ? 'Verificando pago…' : (String(data?.paymentStatus || paymentStatusLocal) === 'approved' ? 'Iniciar Partido' : 'Pagar e Iniciar')}
+              </Button>
+              <p className="text-xs text-gray-600 mt-2">Estado de pago: {String(data?.paymentStatus || paymentStatusLocal || 'pending')}</p>
+            </div>
+          )}
+
               <div className="flex items-center gap-2">
                 <Clock className="text-[#172c44]" size={16} />
-                <span className="text-sm">{currentMatch.time}</span>
+                <span className="text-sm">{String(data?.time || 'Hora no definida')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <MapPin className="text-[#172c44]" size={16} />
-                <span className="text-sm">{currentMatch.location?.address || 'Ubicación no disponible'}</span>
+                <span className="text-sm">{String(data?.courtName || 'Cancha')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Users className="text-[#172c44]" size={16} />
-                <span className="text-sm">{currentMatch.currentPlayers || 0}/{currentMatch.maxPlayers || 0}</span>
+                <span className="text-sm">{currentPlayers}/{maxPlayers || 'N/A'}</span>
               </div>
             </div>
 
@@ -360,23 +390,23 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
         <Card>
           <CardContent className="p-4">
             <h3 className="text-[#172c44] mb-3">Capitán del Equipo</h3>
-            <div className="flex items-center gap-3">
-              <Avatar className="w-12 h-12">
-                <AvatarFallback className="bg-[#f4b400] text-[#172c44] font-bold">
-                  {getInitials(captainDetails?.name || currentMatch.captainName)}
+              <div className="flex items-center gap-3">
+                <Avatar className="w-12 h-12">
+                <AvatarFallback className="bg-[#f4b400] text-[#172c44]">
+                  {String(captainDisplayName || data?.captainName || 'CA').substring(0,2).toUpperCase()}
                 </AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <p className="text-[#172c44]">{captainDetails?.name || currentMatch.captainName || 'Capitán sin nombre'}</p>
-                <div className="flex items-center gap-1">
-                  <Star className="text-[#f4b400]" size={12} fill="currentColor" />
-                  <span className="text-sm text-gray-600">4.8 • 127 partidos</span>
+                </Avatar>
+                <div className="flex-1">
+                <p className="text-[#172c44]">{String(captainDisplayName || data?.captainName || 'Capitán Anónimo')}</p>
+                  <div className="flex items-center gap-1">
+                    <Star className="text-[#f4b400]" size={12} fill="currentColor" />
+                    <span className="text-sm text-gray-600">4.8 • 127 partidos</span>
+                  </div>
                 </div>
+                <Button variant="outline" size="sm" className="text-[#00a884] border-[#00a884]" onClick={handleGoToChat}>
+                  Ir al Chat
+                </Button>
               </div>
-              <Button variant="outline" size="sm" className="text-[#00a884] border-[#00a884]">
-                Mensaje
-              </Button>
-            </div>
           </CardContent>
         </Card>
 
@@ -387,13 +417,16 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               <h3 className="text-[#172c44]">Jugadores Confirmados</h3>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="bg-[#00a884] text-white">
-                  {currentMatch.currentPlayers || 0}/{currentMatch.maxPlayers || 0}
+                  {currentPlayers}/{maxPlayers || 'N/A'}
                 </Badge>
                 {userType === 'player' && onNavigate && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onNavigate('match-players', currentMatch)}
+                    aria-label="Ver todos los jugadores"
+                    tabIndex={0}
+                    onClick={handleViewAllClick}
+                    onTouchStart={handleViewAllClick}
                     className="text-[#172c44] border-[#172c44] hover:bg-[#172c44] hover:text-white"
                   >
                     <Eye size={14} className="mr-1" />
@@ -403,7 +436,6 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               </div>
             </div>
             <div className="space-y-3">
-<<<<<<< Updated upstream
               {loadingPlayers ? (
                 <div className="flex justify-center p-4"><Loader2 className="animate-spin text-gray-500" /></div>
               ) : (
@@ -411,49 +443,32 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
                   <div key={player.id} className="flex items-center gap-3">
                     <Avatar className="w-10 h-10">
                       <AvatarFallback className="bg-gray-200 text-[#172c44] text-sm">
-                        {getInitials(player.name)}
+                        {String(playerId).substring(0,2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
                       <p className="text-sm text-[#172c44]">{player.name}</p>
                       <p className="text-xs text-gray-600">{player.id === currentMatch.captainId ? 'Capitán' : 'Jugador'}</p>
 =======
-              {playersDetails.length > 0 ? (
-                playersDetails.map((player) => (
-                  <div key={player.id} className="flex items-center gap-3">
-                    <Avatar className="w-10 h-10">
-                      <AvatarFallback className="bg-gray-200 text-[#172c44] text-sm">
-                        {player.displayName?.substring(0, 2).toUpperCase() || '??'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <p className="text-sm text-[#172c44]">{player.displayName || 'Jugador Anónimo'}</p>
-                      {player.id === data.captainId && (
-                        <Badge className="bg-orange-500 text-white mt-1">Capitán</Badge>
-                      )}
->>>>>>> Stashed changes
+                      <p className="text-sm text-[#172c44]">Jugador</p>
+                      <p className="text-xs text-gray-600">ID: {String(playerId)}</p>
+
                     </div>
                     <div className="flex items-center gap-1">
                       <Star className="text-[#f4b400]" size={12} fill="currentColor" />
-                      <span className="text-xs text-gray-600">{player.rating || 'N/A'}</span>
+                      <span className="text-xs text-gray-600">4.5</span>
                     </div>
                   </div>
                 ))
-<<<<<<< Updated upstream
 =======
               ) : (
-                playersArray.length > 0 ? (
-                  <div className="text-center py-6 text-gray-600">Cargando jugadores...</div>
-                ) : (
-                  <div className="text-center py-6 text-gray-600">No hay jugadores confirmados aún.</div>
-                )
->>>>>>> Stashed changes
+                <div className="text-center py-6 text-gray-600">No hay jugadores confirmados aún.</div>
+
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Location */}
         <Card>
           <CardContent className="p-4">
             <h3 className="text-[#172c44] mb-3">Ubicación</h3>
@@ -461,32 +476,41 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
               <p className="text-gray-500">Mapa de la cancha</p>
             </div>
             <p className="text-sm text-gray-700 mb-2">
-              Av. Los Leones 1234, Providencia, Santiago
+              {(() => {
+                const loc = data?.location;
+                if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+                  return `${loc.lat}, ${loc.lng}`;
+                }
+                return locationText(loc);
+              })()}
             </p>
-            <Button variant="outline" size="sm" className="w-full">
-              Abrir en Google Maps
-            </Button>
+            {(() => {
+              const loc = data?.location;
+              if (userLocation && loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+                const km = haversineKm(userLocation, { lat: loc.lat, lng: loc.lng });
+                return <p className="text-sm text-gray-600 mb-2">Distancia: {km.toFixed(1)} km</p>;
+              }
+              return null;
+            })()}
+            <Button variant="outline" size="sm" className="w-full" onClick={() => window.open(mapsUrlFor(data), '_blank')}>Abrir en Google Maps</Button>
           </CardContent>
         </Card>
       </div>
 
       {/* Fixed Bottom Button */}
-<<<<<<< Updated upstream
       <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-200 max-w-sm mx-auto">
         {joinError && <p className="text-red-500 text-center text-sm mb-2">{joinError}</p>}
         <Button 
           className="w-full bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] h-12"
-          onClick={handleJoinMatch}
-          disabled={isJoining || isUserInMatch || isMatchFull}
+          onClick={isJoined ? handleGoToChat : handleJoinMatch}
+          disabled={joining}
         >
-          {isJoining ? (
-            <Loader2 className="animate-spin" />
-          ) : isUserInMatch ? (
-            'Ya estás en el partido'
-          ) : isMatchFull ? (
-            'Partido Lleno'
+          {joining ? (
+            <span>Procesando...</span>
+          ) : isJoined ? (
+            <span>Ir al Chat</span>
           ) : (
-            `Unirse al Partido - $${currentMatch.pricePerPlayer?.toLocaleString() || '0'}`
+            <span>Unirse al Partido - {formatCLP(pricePerPlayer)}</span>
           )}
         </Button>
 =======
@@ -522,7 +546,7 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             )}
           </Button>
         )}
->>>>>>> Stashed changes
+
       </div>
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
-import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
@@ -47,6 +46,32 @@ export function CreateTournamentScreen({ onBack, onNavigate }: CreateTournamentS
   const [availableCourts, setAvailableCourts] = useState<Court[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#f4b400] via-[#f4b400] to-[#e6a200]">
+      <AppHeader 
+        title="Crear Torneo" 
+        leftContent={
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft size={20} />
+          </Button>
+        }
+      />
+
+      <div className="p-4 pb-20 space-y-6">
+        <div className="flex flex-col items-center text-center mb-2">
+          <h2 className="text-[#172c44] text-2xl font-bold">🏆 Torneos</h2>
+          <p className="text-[#172c44]/70 text-sm mt-1">Próximamente</p>
+        </div>
+
+        <Card className="bg-white/90 backdrop-blur-sm rounded-2xl">
+          <CardContent className="p-6 text-center space-y-2">
+            <p className="text-[#172c44] font-semibold">Estamos trabajando en esta sección</p>
+            <p className="text-[#172c44] text-sm">Pronto podrás crear torneos desde aquí</p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 
   useEffect(() => {
     const fetchOwnerCourts = async () => {
@@ -56,7 +81,7 @@ export function CreateTournamentScreen({ onBack, onNavigate }: CreateTournamentS
         return;
       }
       try {
-        const q = query(collection(db, "courts"), where("isActive", "==", true));
+        const q = query(collection(db, "cancha"), where("ownerId", "==", currentUser.uid));
         const querySnapshot = await getDocs(q);
         const courtsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
@@ -137,19 +162,17 @@ export function CreateTournamentScreen({ onBack, onNavigate }: CreateTournamentS
       const docRef = await addDoc(collection(db, 'torneo'), tournamentData);
       console.log('Torneo creado con ID: ', docRef.id);
       
-<<<<<<< Updated upstream
       toast.success('¡Torneo creado exitosamente!', {
         description: `El torneo "${formData.name}" ha sido publicado.`,
       });
-=======
-      toast.success('¡Torneo creado exitosamente!');
->>>>>>> Stashed changes
+
+      alert('¡Torneo creado exitosamente!');
+
       onNavigate('tournament-management', { id: docRef.id, ...tournamentData });
 
     } catch (err) {
       console.error("Error al crear el torneo: ", err);
       setError("No se pudo crear el torneo. Inténtalo de nuevo.");
-      toast.error('Error al crear el torneo', { description: 'No se pudo guardar el torneo.' });
     } finally {
       setLoading(false);
     }

@@ -1,12 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Trophy, Users, Calendar, MapPin, Clock, Loader2, AlertTriangle } from 'lucide-react';
+import { Trophy, Users, Calendar, MapPin, Clock } from 'lucide-react';
 import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import { AppHeader } from '../../common/AppHeader';
 import { OwnerNavigation } from '../../navigation/OwnerNavigation';
-import { auth, db } from '../../../Firebase/firebaseConfig';
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 
 interface TournamentsScreenProps {
   onBack?: () => void;
@@ -15,86 +12,29 @@ interface TournamentsScreenProps {
 }
 
 export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: TournamentsScreenProps) {
-  const [tournaments, setTournaments] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const playerTournaments: any[] = [];
 
-  useEffect(() => {
-    const fetchTournaments = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const currentUser = auth.currentUser;
-        let q;
+  const ownerTournaments: any[] = [];
 
-        if (userType === 'owner') {
-          if (!currentUser) throw new Error("Debes iniciar sesión como dueño para ver tus torneos.");
-          q = query(collection(db, "tournaments"), where("ownerId", "==", currentUser.uid));
-        } else {
-          // Simplificamos la consulta para evitar la necesidad de un índice compuesto.
-          q = query(collection(db, "tournaments"));
-        }
-
-        const querySnapshot = await getDocs(q);
-        const tournamentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        // Si es un jugador, filtramos los resultados en el cliente.
-        if (userType === 'player') {
-          const availableTournaments = tournamentsData.filter(t => t.status === 'registration' || t.status === 'Próximamente');
-          setTournaments(availableTournaments);
-        } else {
-          setTournaments(tournamentsData);
-        }
-      } catch (err: any) {
-        console.error("Error fetching tournaments:", err);
-        setError("No se pudieron cargar los torneos.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchTournaments();
-  }, [userType]);
+  const tournaments = userType === 'owner' ? ownerTournaments : playerTournaments;
 
   const getSportEmoji = (sport: string) => {
-    switch (sport.toLowerCase()) {
-      case 'futbol': return '⚽';
-      case 'basquet': return '🏀';
-      case 'tenis': return '🎾';
-      case 'padel': return '🏓';
-      case 'volley': return '🏐';
+    switch (sport) {
+      case 'Fútbol': return '⚽';
+      case 'Básquetball': return '🏀';
+      case 'Tenis': return '🎾';
       default: return '🏆';
     }
   };
 
   const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'registration': return 'bg-green-100 text-green-700';
+    switch (status) {
+      case 'Inscripciones abiertas': return 'bg-green-100 text-green-700';
       case 'Próximamente': return 'bg-blue-100 text-blue-700';
-      case 'active': return 'bg-yellow-100 text-yellow-700';
-      case 'finalizado': return 'bg-gray-100 text-gray-700';
+      case 'En curso': return 'bg-yellow-100 text-yellow-700';
+      case 'Finalizado': return 'bg-gray-100 text-gray-700';
       default: return 'bg-gray-100 text-gray-700';
     }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'registration': return 'Inscripciones abiertas';
-      case 'active': return 'En curso';
-      case 'finalizado': return 'Finalizado';
-      default: return status;
-    }
-  };
-
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'N/A';
-    return timestamp.toDate().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
-
-  const formatPrize = (prize: any) => {
-    const numPrize = Number(prize);
-    if (isNaN(numPrize)) return '$0';
-    return `$${numPrize.toLocaleString('es-CL')}`;
   };
 
   return (
@@ -148,37 +88,19 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
         />
 
         <div className="p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className={userType === 'owner' ? 'text-[#172c44]' : 'text-white'}>
-              {userType === 'owner' ? 'Mis Torneos' : 'Torneos Disponibles'}
-            </h2>
-            <span className={`text-sm ${userType === 'owner' ? 'text-[#172c44]/60' : 'text-white/80'}`}>{tournaments.length} torneos</span>
+          <div className="flex flex-col items-center text-center mb-6">
+            <h2 className={userType === 'owner' ? "font-['Outfit'] font-black text-2xl bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent" : 'text-white text-xl font-bold'}>🏆 Torneos</h2>
+            <p className={userType === 'owner' ? "font-['Outfit'] font-medium text-sm text-[#172c44]/70 mt-1" : 'text-white/80 text-sm mt-1'}>Próximamente</p>
           </div>
 
-          {isLoading && (
-            <div className="flex justify-center items-center py-16">
-              <Loader2 className={`animate-spin h-10 w-10 ${userType === 'owner' ? 'text-[#172c44]' : 'text-white'}`} />
-            </div>
-          )}
+          <Card className={userType === 'owner' ? 'bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl' : 'bg-white/90 backdrop-blur-sm rounded-2xl'}>
+            <CardContent className="p-6 text-center space-y-2">
+              <p className={userType === 'owner' ? "font-['Outfit'] font-bold text-lg text-slate-800" : 'text-[#172c44] font-semibold'}>Estamos trabajando en esta sección</p>
+              <p className={userType === 'owner' ? "font-['Outfit'] text-sm text-slate-600" : 'text-[#172c44] text-sm'}>Pronto podrás crear y gestionar torneos desde aquí</p>
+            </CardContent>
+          </Card>
 
-          {!isLoading && error && (
-            <div className="text-center py-16 bg-white/20 rounded-lg">
-              <AlertTriangle className={`mx-auto h-10 w-10 mb-4 ${userType === 'owner' ? 'text-red-600' : 'text-red-300'}`} />
-              <p className={`${userType === 'owner' ? 'text-red-700' : 'text-red-200'}`}>{error}</p>
-            </div>
-          )}
-
-          {!isLoading && !error && tournaments.length === 0 && (
-            <div className={`text-center py-16 ${userType === 'owner' ? 'bg-white/80' : 'bg-white/10'} rounded-lg`}>
-              <Trophy className={`mx-auto h-12 w-12 mb-4 ${userType === 'owner' ? 'text-slate-400' : 'text-white/50'}`} />
-              <p className={`font-semibold ${userType === 'owner' ? 'text-slate-700' : 'text-white'}`}>
-                {userType === 'owner' ? 'Aún no has creado torneos' : 'No hay torneos disponibles'}
-              </p>
-            </div>
-          )}
-
-          {!isLoading && !error && (
-            <div className="space-y-4">
+          <div className="space-y-4 hidden">
             {tournaments.map((tournament) => (
               <Card key={tournament.id} className={`cursor-pointer transition-all ${
                 userType === 'owner' 
@@ -198,12 +120,12 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                         variant="secondary"
                         className={getStatusColor(tournament.status)}
                       >
-                        {getStatusText(tournament.status)}
+                        {tournament.status}
                       </Badge>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl text-[#00a884] mb-1">{formatPrize(tournament.prize)}</div>
+                    <div className="text-2xl text-[#00a884] mb-1">{tournament.prize}</div>
                     <div className="text-sm text-gray-600">Premio</div>
                   </div>
                 </div>
@@ -213,7 +135,11 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="flex items-center gap-2">
                     <Users className="text-[#172c44]" size={16} />
-                    <span className="text-sm">{tournament.registeredTeams || 0}/{tournament.maxTeams} equipos</span>
+                    <span className="text-sm">
+                      {Array.isArray(tournament.registeredTeams) 
+                        ? tournament.registeredTeams.length 
+                        : tournament.registeredTeams || 0}/{tournament.teams} equipos
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Trophy className="text-[#172c44]" size={16} />
@@ -221,11 +147,11 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar className="text-[#172c44]" size={16} />
-                    <span className="text-sm">{formatDate(tournament.startDate)}</span>
+                    <span className="text-sm">{tournament.startDate}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="text-[#172c44]" size={16} />
-                    <span className="text-sm">{tournament.courts?.join(', ') || 'Por definir'}</span>
+                    <span className="text-sm">{tournament.location}</span>
                   </div>
                 </div>
 
@@ -233,7 +159,7 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                   <div className="flex items-center gap-2">
                     <Clock className="text-yellow-700" size={16} />
                     <span className="text-sm text-yellow-800">
-                      <strong>Inscripciones hasta:</strong> {formatDate(tournament.registrationDeadline)}
+                      <strong>Inscripciones hasta:</strong> {tournament.registrationDeadline}
                     </span>
                   </div>
                 </div>
@@ -267,14 +193,14 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
                     </Button>
                     <Button 
                       className={`flex-1 ${
-                        tournament.status === 'registration'
+                        tournament.status === 'Inscripciones abiertas'
                           ? 'bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44]'
                           : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       }`}
-                      disabled={tournament.status !== 'registration'}
+                      disabled={tournament.status !== 'Inscripciones abiertas'}
                       onClick={() => onNavigate?.('tournament-detail', tournament)}
                     >
-                      {tournament.status === 'registration' ? 'Inscribirse' : 'No disponible'}
+                      {tournament.status === 'Inscripciones abiertas' ? 'Inscribirse' : 'No disponible'}
                     </Button>
                   </div>
                 )}
@@ -282,7 +208,6 @@ export function TournamentsScreen({ onBack, onNavigate, userType = 'player' }: T
             </Card>
           ))}
           </div>
-          )}
         </div>
       </div>
 

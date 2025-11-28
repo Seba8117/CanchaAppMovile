@@ -39,13 +39,18 @@ import { OwnerNavigation } from "./components/navigation/OwnerNavigation";
 
 // --- 1. IMPORTACIÓN AÑADIDA ---
 import { EditCourtScreen } from "./components/screens/owner/EditCourtScreen";
-<<<<<<< Updated upstream
+
 =======
 import { CourtDetailScreen } from "./components/screens/owner/CourtDetailScreen";
 import { ChatScreenOwner } from "./components/screens/owner/ChatScreenOwner";
 import { initPush } from "./services/pushService";
 import { Toaster } from "./components/ui/sonner";
->>>>>>> Stashed changes
+
+=======
+import { CourtDetailScreen } from "./components/screens/owner/CourtDetailScreen";
+import { ChatScreenOwner } from "./components/screens/owner/ChatScreenOwner";
+import { initPush } from "./services/pushService";
+
 
 
 export default function App() {
@@ -90,18 +95,14 @@ export default function App() {
   */
   // --- FIN CÓDIGO DE PRUEBA ---
 
-  const handleLogin = (type: "player" | "owner") => {
-    if (currentUser) {
-      setIsLoggedIn(true);
-      setUserType(type);
-      setCurrentScreen(
-        type === "owner" ? "owner-dashboard" : "home",
-      );
-      console.log("Usuario logueado correctamente con Firebase Auth");
-    } else {
-      console.error("Error: Intentando hacer login sin autenticación de Firebase");
-      setError("Error de autenticación. Por favor, intenta de nuevo.");
-    }
+  const handleLogin = (type: "player" | "owner", user: User) => {
+    setCurrentUser(user);
+    setIsLoggedIn(true);
+    setUserType(type);
+    setCurrentScreen(type === "owner" ? "owner-dashboard" : "home");
+    setError(null);
+    console.log("Usuario logueado correctamente con Firebase Auth");
+    try { initPush(user.uid); } catch {}
   };
 
   const handleLogout = async () => {
@@ -305,6 +306,14 @@ export default function App() {
           return (
             <OwnerCourtsScreen onNavigate={handleNavigate} />
           );
+        case "court-detail":
+          return (
+            <CourtDetailScreen
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+              courtData={screenData}
+            />
+          );
         case "owner-profile":
           return (
             <OwnerProfile
@@ -314,6 +323,10 @@ export default function App() {
           );
         case "edit-owner-profile":
           return <EditOwnerProfileScreen onBack={handleBack} />;
+        case "owner-chat":
+          return <ChatScreenOwner onBack={handleBack} />;
+        case "ChatScreenOwner":
+          return <ChatScreenOwner onBack={handleBack} />;
         case "add-court":
           return (
             <AddCourtScreen
@@ -385,6 +398,8 @@ export default function App() {
     "delete-team",
     "my-bookings",
     "chat",
+    "owner-chat",
+    "ChatScreenOwner",
   ].includes(currentScreen);
 
   return (

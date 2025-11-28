@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
-import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig'; // Asegúrate de que esta ruta sea correcta
@@ -127,30 +126,34 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
 
     try {
       // 3. Preparar el objeto de datos que se guardará en Firebase
+      const orderedAvailability = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].reduce((acc: any, key) => {
+        const v = (formData.availability as any)[key] || { enabled: false };
+        acc[key] = v;
+        return acc;
+      }, {} as any);
       const courtData = {
         ...formData,
+        availability: orderedAvailability,
         pricePerHour: Number(formData.pricePerHour), // Convertir a tipo número
         capacity: Number(formData.capacity) || 0, // Convertir a número o establecer 0 si está vacío
         ownerId: currentUser.uid, // ¡Asocia la cancha al dueño!
-        createdAt: serverTimestamp(), // Agrega una marca de tiempo de cuándo fue creada
-        updatedAt: serverTimestamp() // Agrega una marca de tiempo de la última actualización
+        createdAt: serverTimestamp() // Agrega una marca de tiempo de cuándo fue creada
       };
 
       // 4. Guardar el nuevo documento en la colección 'cancha'
-      const docRef = await addDoc(collection(db, 'courts'), courtData);
+      const docRef = await addDoc(collection(db, 'cancha'), courtData);
       console.log('Cancha creada con ID: ', docRef.id);
       
-<<<<<<< Updated upstream
       toast.success('¡Cancha creada exitosamente!', {
         description: `La cancha "${formData.name}" ya está disponible para ser reservada.`,
       });
-=======
-      toast.success('¡Cancha creada exitosamente!');
->>>>>>> Stashed changes
+
+      alert('¡Cancha creada exitosamente!');
+
       onBack(); // Regresar a la pantalla anterior después de crear
 
     } catch (err) {
-      toast.error('Error al crear la cancha', { description: 'No se pudo guardar la cancha. Inténtalo de nuevo.' });
+      console.error("Error al crear la cancha: ", err);
       setError("No se pudo crear la cancha. Inténtalo de nuevo más tarde.");
     } finally {
       setLoading(false);
@@ -194,14 +197,97 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
 
             <div>
               <Label className="text-[#172c44]">Deporte *</Label>
-              <Select value={formData.sport} onValueChange={(value) => handleInputChange('sport', value)}>
-                <SelectTrigger><SelectValue placeholder="Selecciona el deporte" /></SelectTrigger>
-                <SelectContent>
-                  {sportOptions.map((sport) => (
-                    <SelectItem key={sport.value} value={sport.value}>{sport.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                {/* Icono dinámico del deporte seleccionado */}
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/60">
+                  {(function(){
+                    const s = (formData.sport || '').toLowerCase();
+                    if (s.includes('fut')) return (
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+                        <circle cx="12" cy="12" r="10" fill="#FFF" stroke="#172c44" strokeWidth="1.5" />
+                        <path d="M12 2l3 4-3 3-3-3 3-4z" fill="#172c44" />
+                        <path d="M5 14l3-2 2 3-3 2-2-3z" fill="#172c44" />
+                        <path d="M16 12l3 2-2 3-3-2 2-3z" fill="#172c44" />
+                      </svg>
+                    );
+                    if (s.includes('bás') || s.includes('basq')) return (
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+                        <circle cx="12" cy="12" r="10" fill="#ff8f00" stroke="#6d4c41" strokeWidth="1.5" />
+                        <path d="M4 12h16M12 4v16M6 6l12 12M6 18L18 6" stroke="#6d4c41" strokeWidth="1.2" fill="none" />
+                      </svg>
+                    );
+                    if (s.includes('ten')) return (
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+                        <circle cx="12" cy="12" r="10" fill="#8bc34a" stroke="#33691e" strokeWidth="1.5" />
+                        <path d="M6 8c2.5 2 6.5 2 9 0M6 16c2.5-2 6.5-2 9 0" stroke="#33691e" strokeWidth="1.2" fill="none" />
+                      </svg>
+                    );
+                    if (s.includes('pádel') || s.includes('padel') || s.includes('pade')) return (
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+                        <circle cx="9" cy="10" r="6" fill="#cddc39" stroke="#827717" strokeWidth="1.5" />
+                        <rect x="14" y="12" width="6" height="2" rx="1" fill="#827717" />
+                      </svg>
+                    );
+                    if (s.includes('vól') || s.includes('vole') || s.includes('vol')) return (
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+                        <circle cx="12" cy="12" r="10" fill="#eceff1" stroke="#37474f" strokeWidth="1.5" />
+                        <path d="M4 12c6-5 10-5 16 0M6 6c4 4 8 4 12 0M6 18c4-4 8-4 12 0" stroke="#37474f" strokeWidth="1.2" fill="none" />
+                      </svg>
+                    );
+                    return (
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+                        <circle cx="12" cy="12" r="10" fill="#e0e0e0" stroke="#616161" strokeWidth="1.5" />
+                      </svg>
+                    );
+                  })()}
+                </span>
+                <Select value={formData.sport} onValueChange={(value) => handleInputChange('sport', value)} className="flex-1">
+                  <SelectTrigger><SelectValue placeholder="Selecciona el deporte" /></SelectTrigger>
+                  <SelectContent>
+                    {sportOptions.map((sport) => (
+                      <SelectItem key={sport.value} value={sport.value}>
+                        <span className="inline-flex items-center gap-2">
+                          {(function(){
+                            const s = sport.value.toLowerCase();
+                            if (s.includes('fut')) return (
+                              <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden>
+                                <circle cx="12" cy="12" r="10" fill="#FFF" stroke="#172c44" strokeWidth="1.5" />
+                                <path d="M12 2l3 4-3 3-3-3 3-4z" fill="#172c44" />
+                              </svg>
+                            );
+                            if (s.includes('bás') || s.includes('basq')) return (
+                              <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden>
+                                <circle cx="12" cy="12" r="10" fill="#ff8f00" stroke="#6d4c41" strokeWidth="1.5" />
+                              </svg>
+                            );
+                            if (s.includes('ten')) return (
+                              <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden>
+                                <circle cx="12" cy="12" r="10" fill="#8bc34a" stroke="#33691e" strokeWidth="1.5" />
+                              </svg>
+                            );
+                            if (s.includes('pádel') || s.includes('padel') || s.includes('pade')) return (
+                              <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden>
+                                <circle cx="9" cy="10" r="6" fill="#cddc39" stroke="#827717" strokeWidth="1.5" />
+                              </svg>
+                            );
+                            if (s.includes('vól') || s.includes('vole') || s.includes('vol')) return (
+                              <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden>
+                                <circle cx="12" cy="12" r="10" fill="#eceff1" stroke="#37474f" strokeWidth="1.5" />
+                              </svg>
+                            );
+                            return (
+                              <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden>
+                                <circle cx="12" cy="12" r="10" fill="#e0e0e0" stroke="#616161" strokeWidth="1.5" />
+                              </svg>
+                            );
+                          })()}
+                          {sport.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div>

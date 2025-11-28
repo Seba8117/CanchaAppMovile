@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Calendar, Users, Clock, Star, Plus, Loader2, AlertTriangle, MessageCircle } from 'lucide-react'; // Ícono de chat añadido
+import { MapPin, Calendar, Users, Clock, Star, Plus, Loader2, AlertTriangle, MessageCircle } from 'lucide-react';
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { getPersonalizedRecommendations, MatchRecommendation } from '../../../services/matchmakingService';
 import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
+import { getUserLocationCached, haversineKm, reverseGeocode, watchUserLocation } from '../../../services/locationService';
+import { triggerProximityNotifications } from '../../../services/pushService';
+import { auth } from '../../../Firebase/firebaseConfig';
+import { db } from '../../../Firebase/firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface HomeScreenProps {
   onNavigate: (screen: string, data?: any) => void;
@@ -14,9 +19,62 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
   const [recommendations, setRecommendations] = useState<MatchRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userAddress, setUserAddress] = useState<string>('');
+  const [displayName, setDisplayName] = useState<string>('Usuario');
 
   useEffect(() => {
     loadRecommendations();
+  }, []);
+
+  useEffect(() => {
+    const getLoc = async () => {
+      const loc = await getUserLocationCached();
+      setUserLocation(loc);
+      if (loc) {
+        const addr = await reverseGeocode(loc);
+        if (addr) setUserAddress(addr);
+      } else {
+        setUserAddress('');
+      }
+      try {
+        const uid = (auth as any)?.currentUser?.uid;
+        if (uid && loc) await triggerProximityNotifications(uid, loc);
+      } catch {}
+    };
+    getLoc();
+  }, []);
+
+  useEffect(() => {
+    const unsub = (auth as any)?.onAuthStateChanged?.((u: any) => {
+      setDisplayName(u?.displayName || 'Usuario');
+    });
+    return () => unsub?.();
+  }, []);
+
+  useEffect(() => {
+    const stop = watchUserLocation(async (loc) => {
+      setUserLocation(loc);
+      const addr = await reverseGeocode(loc);
+      if (addr) setUserAddress(addr);
+    });
+    return () => stop();
+  }, []);
+
+  useEffect(() => {
+    const fetchDisplayName = async () => {
+      try {
+        const u = (auth as any)?.currentUser;
+        const uid = u?.uid;
+        if (!uid) return;
+        const ref = doc(db, 'users', uid);
+        const snap = await getDoc(ref);
+        const fromDb = snap.exists() ? (snap.data() as any)?.displayName : null;
+        const fallback = u?.displayName || (u?.email ? String(u.email).split('@')[0] : 'Usuario');
+        setDisplayName(fromDb || fallback);
+      } catch {}
+    };
+    fetchDisplayName();
   }, []);
 
   const loadRecommendations = async () => {
@@ -66,6 +124,22 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
     }).format(price);
   };
 
+  const enhanceWithDistance = (items: MatchRecommendation[]) => {
+    if (!userLocation) return items;
+    const mapped = items.map((r) => {
+      const m: any = r.match || {};
+      const lc = m.location;
+      const coords = lc && typeof lc.lat === 'number' && typeof lc.lng === 'number' ? { lat: lc.lat, lng: lc.lng } : null;
+      const distance = coords ? `${haversineKm(userLocation, coords).toFixed(1)} km` : 'N/A';
+      return { ...r, match: { ...m, distance } } as any;
+    });
+    return mapped.sort((a: any, b: any) => {
+      const da = a.match?.distance?.endsWith(' km') ? parseFloat(a.match.distance) : Number.POSITIVE_INFINITY;
+      const db = b.match?.distance?.endsWith(' km') ? parseFloat(b.match.distance) : Number.POSITIVE_INFINITY;
+      return da - db;
+    });
+  };
+
   return (
     <div className="p-4 pb-32 bg-gradient-to-br from-[#172c44] to-[#00a884] min-h-screen">
       <div className="flex items-center justify-between mb-6">
@@ -76,7 +150,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
             className="w-10 h-10 rounded-lg"
           />
           <div>
-            <h1 className="text-white mb-1 font-bold text-2xl">¡Hola, Usuario!</h1>
+            <h1 className="text-white mb-1 font-bold text-2xl">¡Hola, {displayName}!</h1>
             <p className="text-white font-semibold">Encuentra partidos cerca de ti</p>
           </div>
         </div>
@@ -96,13 +170,14 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
       <div className="mb-6">
         <div className="flex items-center gap-2 p-3 bg-white rounded-lg shadow-sm">
           <MapPin className="text-[#00a884]" size={20} />
-          <span className="text-gray-700">Santiago Centro, Chile</span>
+          <span className="text-gray-700">{userLocation ? (userAddress || `${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}`) : 'Ubicación no disponible'}</span>
           <Button 
             variant="ghost" 
             size="sm"
             className="ml-auto text-[#f4b400]"
+            onClick={async () => { const loc = await getUserLocationCached(0); setUserLocation(loc); if (loc) { const addr = await reverseGeocode(loc); if (addr) setUserAddress(addr); } }}
           >
-            Cambiar
+            Actualizar ubicación
           </Button>
         </div>
       </div>
@@ -145,7 +220,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
         </Card>
       ) : (
         <div className="space-y-4">
-          {recommendations.map((recommendation) => {
+          {enhanceWithDistance(recommendations).map((recommendation: any) => {
             const match = recommendation.match;
             return (
               <Card 
@@ -177,6 +252,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
                     <div className="flex items-center gap-1">
                       <MapPin size={14} />
                       <span>{match.location?.address || 'Ubicación no disponible'}</span>
+                      <span>{match.distance || 'N/A'}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar size={14} />
@@ -230,7 +306,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
           {/* --- BOTÓN MODIFICADO --- */}
           <Button
             variant="outline"
-            className="h-16 flex-col gap-2 border-[#93c5fd] text-[#93c5fd] hover:bg-[#93c5fd] hover:text-white"
+            className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]"
             onClick={() => onNavigate('chat')}
           >
             <MessageCircle size={20} />
@@ -258,14 +334,14 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
            </Button>
           <Button
             variant="outline"
-            className="h-16 flex-col gap-2 border-purple-700 text-purple-700 hover:bg-purple-700 hover:text-white"
+            className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]"
             onClick={() => onNavigate('my-teams')}
           >
             <Users size={20} />
             Mis Equipos
           </Button>
           <Button variant="outline" 
-          className="h-16 flex-col gap-2 border-[#93c5fd] text-[#93c5fd] hover:bg-[#93c5fd] hover:text-white" 
+          className="h-16 flex-col gap-2 border-[#f4b400] text-[#f4b400] hover:bg-[#f4b400] hover:text-[#172c44]" 
           onClick={() => onNavigate('my-bookings')}>
             <Calendar size={20} />
             Mis Reservas

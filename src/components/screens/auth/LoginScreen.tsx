@@ -6,19 +6,21 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Textarea } from '../../ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Label } from '../../ui/label';
+import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
 
 // --- INICIO: Importaciones de Firebase (ACTUALIZADAS) ---
 import { auth, db } from '../../../Firebase/firebaseConfig'; // Asegúrate de que esta ruta sea correcta
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
-  signOut // Importamos signOut para manejar inicios de sesión incorrectos
+  signOut,
+  User as FirebaseUser
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore'; // Importamos getDoc para verificar el rol
 // --- FIN: Importaciones de Firebase ---
 
 interface LoginScreenProps {
-  onLogin: (userType: 'player' | 'owner') => void;
+  onLogin: (userType: 'player' | 'owner', user: FirebaseUser) => void;
 }
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
@@ -62,7 +64,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         if (userDocSnap.exists()) {
           // El usuario existe en la colección correcta, ¡éxito!
           console.log(`Inicio de sesión exitoso como ${userType}`);
-          onLogin(userType);
+          onLogin(userType, user);
         } else {
           // El usuario existe en Auth pero no tiene este rol.
           // Cerramos su sesión para evitar problemas de seguridad.
@@ -107,16 +109,18 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         await setDoc(doc(db, collectionName, user.uid), userData);
         console.log(`Datos del usuario guardados en la colección "${collectionName}".`);
 
-        onLogin(userType);
+        onLogin(userType, user);
       }
     } catch (err: any) {
       console.error("Error de autenticación:", err);
       
-      let friendlyMessage = err.message; // Usamos el mensaje del nuevo error primero
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        friendlyMessage = "Correo electrónico o contraseña incorrectos.";
+      let friendlyMessage = err.message;
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        friendlyMessage = "Correo o contraseña invalidas";
       } else if (err.code === 'auth/email-already-in-use') {
         friendlyMessage = "Este correo electrónico ya está registrado.";
+      } else if (err.code === 'auth/invalid-email') {
+        friendlyMessage = "Correo inválido.";
       }
       
       setError(friendlyMessage);
@@ -129,7 +133,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884] flex flex-col items-center justify-center p-4">
       <div className="mb-8">
         <img 
-          // Recuerda poner aquí la ruta a tu logo, por ejemplo: src="/src/assets/logo.png"
+          src={logoIcon}
           alt="CanchApp Logo" 
           className="w-24 h-24 mx-auto rounded-3xl shadow-2xl"
         />

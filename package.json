@@ -4,6 +4,7 @@
       "private": true,
       "dependencies": {
             "@capacitor/android": "^7.4.3",
+            "@capacitor/browser": "^7.0.2",
             "@capacitor/camera": "^7.0.2",
             "@capacitor/cli": "^7.4.3",
             "@capacitor/core": "^7.4.3",
@@ -44,10 +45,14 @@
             "class-variance-authority": "^0.7.1",
             "clsx": "*",
             "cmdk": "^1.1.1",
+            "cors": "^2.8.5",
             "embla-carousel-react": "^8.6.0",
+            "express": "^5.1.0",
             "firebase": "^12.4.0",
+            "firebase-admin": "^13.6.0",
             "input-otp": "^1.4.2",
             "lucide-react": "^0.487.0",
+            "mercadopago": "^2.10.0",
             "next-themes": "^0.4.6",
             "react": "^18.3.1",
             "react-day-picker": "^8.10.1",
@@ -60,17 +65,19 @@
             "vaul": "^1.1.2"
       },
       "devDependencies": {
+            "@testing-library/jest-dom": "^6.5.0",
+            "@testing-library/react": "^16.1.0",
             "@types/node": "^20.10.0",
             "@types/react": "^19.2.2",
             "@types/react-dom": "^19.2.2",
             "@vitejs/plugin-react-swc": "^3.11.0",
+            "jsdom": "^24.0.0",
             "typescript": "^5.9.3",
-<<<<<<< Updated upstream
             "vite": "6.3.5"
 =======
-            "vite": "^6.3.5",
+            "vite": "6.3.5",
             "vitest": "^2.1.4"
->>>>>>> Stashed changes
+
       },
       "scripts": {
             "dev": "vite",
@@ -79,6 +86,14 @@
             "android": "cap run android",
             "android:dev": "cap run android --livereload --external",
             "build:android": "npm run build && cap sync android && cap open android",
-            "sync": "cap sync"
+            "sync": "cap sync",
+            "test": "vitest",
+            "payments:dev": "node server/index.mjs"
+      },
+      "vitest": {
+            "environment": "jsdom",
+            "setupFiles": [
+                  "src/vitest.setup.ts"
+            ]
       }
 }

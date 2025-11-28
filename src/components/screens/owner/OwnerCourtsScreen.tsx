@@ -4,6 +4,7 @@ import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
+import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
@@ -18,7 +19,8 @@ import {
   deleteDoc, // <-- Importado para borrar
   updateDoc,
   serverTimestamp,
-  orderBy, // <-- IMPORTACIÓN AÑADIDA
+  getDocs,
+  arrayUnion,
 } from 'firebase/firestore';
 // --- FIN: Importaciones de Firebase ---
 
@@ -69,7 +71,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
       return;
     }
     const courtsQuery = query(
-      collection(db, "courts"),
+      collection(db, "cancha"), 
       where("ownerId", "==", currentUser.uid)
     );
     const unsubscribe = onSnapshot(courtsQuery, (querySnapshot) => {
@@ -77,9 +79,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
         id: doc.id,
         ...doc.data(),
       })) as Court[];
-      // Ordenar las canchas localmente por fecha de actualización
-      const sortedCourts = courtsData.sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
-      setCourts(sortedCourts);
+      setCourts(courtsData);
       setLoading(false);
     }, (err) => {
       console.error("Error al obtener las canchas: ", err);
@@ -87,6 +87,34 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
       setLoading(false);
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const autoFixOwnership = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      try {
+        const snap = await getDocs(collection(db, 'cancha'));
+        let updated = 0;
+        for (const d of snap.docs) {
+          const data = d.data() as any;
+          if (!data.ownerId) {
+            await updateDoc(doc(db, 'cancha', d.id), {
+              ownerId: currentUser.uid,
+              updatedAt: serverTimestamp(),
+              changeHistory: arrayUnion({ by: currentUser.uid, at: serverTimestamp(), changes: { ownerId: { before: null, after: currentUser.uid } } })
+            });
+            updated += 1;
+          }
+        }
+        if (updated > 0) {
+          toast.success(`Permisos corregidos automáticamente: ${updated}`);
+        }
+      } catch (e) {
+        console.error('Error en corrección automática de permisos: ', e);
+      }
+    };
+    autoFixOwnership();
   }, []);
 
   const getSportIcon = (sport: string) => {
@@ -100,6 +128,8 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
       default: return '🏟️';
     }
   };
+
+  const formatCLP = (amount: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(Number(amount) || 0);
 
   const calculateAverageRating = () => {
     if (courts.length === 0) return 0;
@@ -126,7 +156,7 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
 
     try {
       // Eliminar el documento de la cancha
-      await deleteDoc(doc(db, "courts", selectedCourt.id));
+      await deleteDoc(doc(db, "cancha", selectedCourt.id));
       
       // Opcional: mostrar un toast de éxito
       // toast.success("Cancha eliminada"); 
@@ -146,13 +176,15 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
   const handleToggleActive = async (e: React.MouseEvent, court: Court) => {
     e.stopPropagation();
     try {
-      const ref = doc(db, 'courts', court.id);
+      const ref = doc(db, 'cancha', court.id);
       await updateDoc(ref, { isActive: !court.isActive, updatedAt: serverTimestamp() });
     } catch (err) {
       console.error('Error al actualizar estado de la cancha: ', err);
       setError('No se pudo cambiar el estado de la cancha.');
     }
   };
+
+  
 
   if (loading) {
     return (
@@ -225,9 +257,9 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
                       </div>
                       <div className="text-right">
                         <p className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                          ${court.pricePerHour.toLocaleString()}
+                          {formatCLP(court.pricePerHour)}
                         </p>
-                        <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">COP/hora</p>
+                        <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">CLP/hora</p>
                       </div>
                     </div>
                      <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">

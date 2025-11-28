@@ -1,24 +1,12 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, AlertTriangle, Users, Shield, Loader2, MoreVertical, Trash2, Move } from 'lucide-react';
+import { ArrowLeft, Star, AlertTriangle, Users, Shield, Loader2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
-import { Timestamp, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../../Firebase/firebaseConfig';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../../ui/dropdown-menu";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "../../ui/alert-dialog";
-import { leaveMatch } from '../../../services/matchService';
-import { toast } from 'sonner';
+import { useEffect, useRef, useState } from 'react';
+import { db } from '../../../Firebase/firebaseConfig';
+import { collection, documentId, getDocs, query, where } from 'firebase/firestore';
 
 interface MatchPlayersScreenProps {
   match: any;
@@ -28,108 +16,56 @@ interface MatchPlayersScreenProps {
 }
 
 export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: MatchPlayersScreenProps) {
-  const [team1, setTeam1] = useState<any[]>([]);
-  const [team2, setTeam2] = useState<any[]>([]);
-  const [loadingPlayers, setLoadingPlayers] = useState(true);
-  const [isCaptain, setIsCaptain] = useState(false);
-
-  // Estado para el diálogo de eliminación
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [playerToDelete, setPlayerToDelete] = useState<any | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [visibleCount, setVisibleCount] = useState(50);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const startTs = useRef<number>(performance.now());
 
   useEffect(() => {
-    const fetchPlayerDetails = async () => {
-      if (!match.players || match.players.length === 0) {
-        setLoadingPlayers(false);
-        return;
-      }
-      setLoadingPlayers(true);
+    const loadPlayers = async () => {
       try {
-        const playerPromises = match.players.map(async (playerId: string) => {
-          const playerDocRef = doc(db, 'jugador', playerId);
-          const playerDocSnap = await getDoc(playerDocRef);
-          if (playerDocSnap.exists()) {
-            return { id: playerId, ...playerDocSnap.data() };
-          }
-          return { id: playerId, name: 'Jugador Desconocido', rating: 0, position: 'Jugador' };
-        });
-        const allPlayers = await Promise.all(playerPromises);
-
-        // Dividir jugadores en dos equipos
-        const midIndex = Math.ceil(allPlayers.length / 2);
-        setTeam1(allPlayers.slice(0, midIndex));
-        setTeam2(allPlayers.slice(midIndex));
-
-      } catch (error) {
-        console.error("Error fetching player details:", error);
+        setError(null);
+        const ids: string[] = Array.isArray(match?.players) ? match.players : [];
+        if (ids.length === 0) {
+          setPlayers([]);
+          return;
+        }
+        const chunks: string[][] = [];
+        for (let i = 0; i < ids.length; i += 10) chunks.push(ids.slice(i, i + 10));
+        const results: any[] = [];
+        for (const chunk of chunks) {
+          const q = query(collection(db, 'jugador'), where(documentId(), 'in', chunk));
+          const snap = await getDocs(q);
+          snap.docs.forEach(d => results.push({ id: d.id, ...d.data() }));
+        }
+        setPlayers(results);
+      } catch (err: any) {
+        setError('No se pudieron cargar los jugadores.');
       } finally {
-        setLoadingPlayers(false);
+        setLoading(false);
+        const duration = performance.now() - startTs.current;
+        console.log(`[MatchPlayersScreen] loaded in ${Math.round(duration)}ms, players=${players.length}`);
       }
     };
+    loadPlayers();
+  }, [match?.id]);
 
-    // Determinar si el usuario actual es el capitán
-    setIsCaptain(auth.currentUser?.uid === match.captainId);
-
-    fetchPlayerDetails();
-  }, [match.players]);
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (entry.isIntersecting) {
+        setVisibleCount((c) => c + 50);
+      }
+    });
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [sentinelRef.current]);
 
   const handleReportPlayer = (player: any) => {
     onNavigate('report-player', { player, match });
-  };
-
-  const handleMovePlayer = (player: any, fromTeam: 1 | 2) => {
-    if (fromTeam === 1) {
-      setTeam1(prev => prev.filter(p => p.id !== player.id));
-      setTeam2(prev => [...prev, player]);
-    } else {
-      setTeam2(prev => prev.filter(p => p.id !== player.id));
-      setTeam1(prev => [...prev, player]);
-    }
-  };
-
-  const openDeleteDialog = (player: any) => {
-    if (player.id === match.captainId) return; // No se puede eliminar al capitán
-    setPlayerToDelete(player);
-    setShowDeleteConfirm(true);
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!playerToDelete) return;
-
-    setIsDeleting(true);
-    try {
-      // Usar el servicio para eliminar al jugador del partido
-      await leaveMatch(match.id, playerToDelete.id);
-
-      // Simular notificación al jugador eliminado
-      toast.info(`Se ha notificado a ${playerToDelete.name} que fue eliminado del partido.`);
-
-      // Actualizar la UI eliminando al jugador de los equipos locales
-      setTeam1(prev => prev.filter(p => p.id !== playerToDelete.id));
-      setTeam2(prev => prev.filter(p => p.id !== playerToDelete.id));
-
-      toast.success(`${playerToDelete.name} ha sido eliminado del partido.`);
-
-    } catch (error: any) {
-      console.error("Error al eliminar jugador:", error);
-      toast.error("Error al eliminar", { description: error.message });
-    } finally {
-      setIsDeleting(false);
-      setShowDeleteConfirm(false);
-      setPlayerToDelete(null);
-    }
-  };
-
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'Fecha no disponible';
-    const date = timestamp instanceof Timestamp ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
-  };
-
-  const getInitials = (name: string) => {
-    if (!name) return '?';
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
   const renderPlayerCard = (player: any, isMyTeam: boolean) => (
@@ -138,11 +74,11 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
         <div className="flex items-center gap-3">
           <div className="relative">
             <Avatar className="w-12 h-12">
-              <AvatarFallback className={`${isMyTeam ? 'bg-[#00a884]' : 'bg-[#172c44]'} text-white font-bold`}>
-                {getInitials(player.name)}
+              <AvatarFallback className={`${isMyTeam ? 'bg-[#00a884]' : 'bg-[#172c44]'} text-white`}>
+                {(player.displayName || player.name || player.email || 'US')[0]}
               </AvatarFallback>
             </Avatar>
-            {player.id === match.captainId && (
+            {player.isCaptain && (
               <div className="absolute -top-1 -right-1 bg-[#f4b400] rounded-full p-1">
                 <Shield size={12} className="text-[#172c44]" />
               </div>
@@ -150,48 +86,29 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <p className="text-[#172c44]">{player.name}</p>
-              {player.id === match.captainId && (
+              <p className="text-[#172c44]">{player.displayName || player.name || player.email || 'Usuario'}</p>
+              {player.isCaptain && (
                 <Badge variant="outline" className="text-xs border-[#f4b400] text-[#f4b400]">
                   Capitán
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-gray-600">{player.position || 'Jugador'}</p>
+            <p className="text-sm text-gray-600">{player.favoritePosition || 'Jugador'}</p>
             <div className="flex items-center gap-1">
               <Star className="text-[#f4b400]" size={12} fill="currentColor" />
-              <span className="text-xs text-gray-600">{player.rating || 'N/A'}</span>
+              <span className="text-xs text-gray-600">{player.rating || '4.5'}</span>
             </div>
           </div>
-          
-          {/* Menú de acciones para el capitán */}
-          {isCaptain && player.id !== match.captainId && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => handleMovePlayer(player, isMyTeam ? 1 : 2)}>
-                  <Move className="mr-2 h-4 w-4" />
-                  <span>Mover a Equipo {isMyTeam ? 2 : 1}</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => handleReportPlayer(player)}
-                >
-                  <AlertTriangle className="mr-2 h-4 w-4" />
-                  <span>Reportar Jugador</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  className="text-red-600 focus:text-red-600"
-                  onClick={() => openDeleteDialog(player)}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  <span>Eliminar del partido</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {userType === 'player' && !isMyTeam && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleReportPlayer(player)}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <AlertTriangle size={14} className="mr-1" />
+              Reportar
+            </Button>
           )}
         </div>
       </CardContent>
@@ -218,15 +135,15 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
             <div className="flex items-center justify-between">
               <div>
                 <Badge className="bg-[#f4b400] text-[#172c44] mb-2">
-                  {match.sport}
+                  {String(match?.sport || 'Deporte')}
                 </Badge>
-                <CardTitle className="text-[#172c44] text-lg">{match.location?.address || 'Ubicación no disponible'}</CardTitle>
-                <p className="text-sm text-gray-600">{formatDate(match.date)} • {match.time}</p>
+                <CardTitle className="text-[#172c44] text-lg">{typeof match?.location === 'object' ? match?.location?.address || 'Ubicación no especificada' : String(match?.location || 'Ubicación no especificada')}</CardTitle>
+                <p className="text-sm text-gray-600">{(match?.date?.toDate ? match.date.toDate().toLocaleDateString() : String(match?.date || 'Fecha'))} • {String(match?.time || 'Hora')}</p>
               </div>
               <div className="text-right">
                 <div className="flex items-center gap-2 text-[#00a884]">
                   <Users size={16} />
-                  <span>{match.currentPlayers || 0} jugadores</span>
+                  <span>{players.length} jugadores</span>
                 </div>
               </div>
             </div>
@@ -234,54 +151,29 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
         </Card>
 
         {/* Players Tabs */}
-        <Tabs defaultValue="my-team" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="my-team" className="flex items-center gap-2">
+        <Tabs defaultValue="all" className="w-full">
+          <TabsList className="grid w-full grid-cols-1 mb-6">
+            <TabsTrigger value="all" className="flex items-center gap-2">
               <div className="w-3 h-3 bg-[#00a884] rounded-full"></div>
-              Equipo 1 ({team1.length})
-            </TabsTrigger>
-            <TabsTrigger value="rival-team" className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-[#172c44] rounded-full"></div>
-              Equipo 2 ({team2.length})
+              Todos ({players.length})
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="my-team" className="space-y-0">
-            <div className="mb-4">
-              <h3 className="text-[#172c44] mb-3 flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#00a884] rounded-full"></div>
-                Equipo 1
-              </h3>
-              {userType === 'player' && (
-                <p className="text-sm text-gray-600 mb-4">
-                  Estos son los jugadores del primer equipo.
-                </p>
-              )}
-            </div>
-            {loadingPlayers ? (
-              <div className="flex justify-center p-4"><Loader2 className="animate-spin text-gray-500" /></div>
-            ) : (
-              team1.map((player) => renderPlayerCard(player, true))
+          <TabsContent value="all" className="space-y-0">
+            {loading && (
+              <div className="space-y-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="animate-pulse bg-white/40 h-16 rounded-md" />
+                ))}
+              </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="rival-team" className="space-y-0">
-            <div className="mb-4">
-              <h3 className="text-[#172c44] mb-3 flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#172c44] rounded-full"></div>
-                Equipo Rival
-              </h3>
-              {userType === 'player' && (
-                <p className="text-sm text-gray-600 mb-4">
-                  Estos son los jugadores del segundo equipo.
-                </p>
-              )}
-            </div>
-            {loadingPlayers ? (
-              <div className="flex justify-center p-4"><Loader2 className="animate-spin text-gray-500" /></div>
-            ) : (
-              team2.map((player) => renderPlayerCard(player, false))
+            {!loading && error && (
+              <div className="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
             )}
+            {!loading && !error && players.slice(0, visibleCount).map((player) => renderPlayerCard(player, true))}
+            <div ref={sentinelRef} />
           </TabsContent>
         </Tabs>
 
@@ -302,26 +194,6 @@ export function MatchPlayersScreen({ match, onBack, onNavigate, userType }: Matc
           </Card>
         )}
       </div>
-
-      {/* Diálogo de confirmación para eliminar jugador */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar a {playerToDelete?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción eliminará al jugador del partido. Se le enviará una notificación.
-              ¿Estás seguro?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">
-              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sí, eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

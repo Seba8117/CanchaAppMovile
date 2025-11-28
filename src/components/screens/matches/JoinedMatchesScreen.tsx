@@ -6,18 +6,6 @@ import { getMatchesForPlayer, leaveMatch } from '../../../services/matchService'
 import { auth } from '../../../Firebase/firebaseConfig';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../ui/alert-dialog';
 
-import { toast } from 'sonner';
-import { auth } from '../../../Firebase/firebaseConfig';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../../ui/alert-dialog";
 interface Match {
   id: string;
   sport: string;
@@ -49,12 +37,11 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [leavingMatchId, setLeavingMatchId] = useState<string | null>(null);
+
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-<<<<<<< Updated upstream
   const [matchToLeave, setMatchToLeave] = useState<{ id: string; name: string } | null>(null);
 =======
-  const [matchToLeave, setMatchToLeave] = useState<{id: string, name: string} | null>(null);
->>>>>>> Stashed changes
+
 
   // Cargar partidos del usuario
   useEffect(() => {
@@ -62,7 +49,7 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
       try {
         setIsLoading(true);
         setError(null);
-<<<<<<< Updated upstream
+
 
         const user = auth.currentUser;
         if (!user) {
@@ -71,7 +58,13 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
           return;
         }
         const userId = user.uid;
+=======
+        
+        // TODO: Obtener el ID del usuario actual del contexto de autenticación
+        const userId = 'current-user-id';
+
         const userMatches = await getMatchesForPlayer(userId);
+        
         setMatches(userMatches as Match[]);
 =======
         
@@ -82,7 +75,7 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
         } else {
           setError("Debes iniciar sesión para ver tus partidos.");
         }
->>>>>>> Stashed changes
+
       } catch (err) {
         console.error('Error al cargar partidos:', err);
         setError(err instanceof Error ? err.message : 'Error al cargar tus partidos');
@@ -94,70 +87,49 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
     loadUserMatches();
   }, [auth.currentUser]);
 
-<<<<<<< Updated upstream
   const handleLeaveClick = (matchId: string, matchName: string) => {
-=======
-  const promptLeaveMatch = (matchId: string, matchName: string) => {
->>>>>>> Stashed changes
     setMatchToLeave({ id: matchId, name: matchName });
     setShowConfirmDialog(true);
   };
 
-<<<<<<< Updated upstream
   const handleConfirmLeave = async () => {
     if (!matchToLeave) return;
 
-    const { id: matchId, name: matchName } = matchToLeave;
+    if (!confirmed) return;
 
     try {
       setLeavingMatchId(matchId);
-      setShowConfirmDialog(false);
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error("No se pudo verificar tu identidad. Por favor, inicia sesión de nuevo.");
-      }
-      const userId = user.uid;
-
+      
+      // TODO: Obtener el ID del usuario actual del contexto de autenticación
+      const userId = 'current-user-id';
+      
       await leaveMatch(matchId, userId);
 
 =======
-  const confirmLeaveMatch = async () => {
-    if (!matchToLeave) return;
-    const user = auth.currentUser;
-    if (!user) {
-        toast.error("Debes iniciar sesión para salir de un partido.");
-        return;
-    }
+      
 
-    try {
-      setLeavingMatchId(matchToLeave.id);
-      
-      await leaveMatch(matchToLeave.id, user.uid);
-      
->>>>>>> Stashed changes
       // Actualizar la lista de partidos
       const updatedMatches = await getMatchesForPlayer(user.uid);
       setMatches(updatedMatches as Match[]);
-<<<<<<< Updated upstream
 
-=======
-      
->>>>>>> Stashed changes
       toast.success('Has salido del partido exitosamente.');
       
     } catch (error) {
       console.error('Error al salir del partido:', error);
-<<<<<<< Updated upstream
       toast.error('Error al salir del partido', { description: error instanceof Error ? error.message : 'Ocurrió un error inesperado.' });
     } finally {
       setLeavingMatchId(null);
+      setMatchToLeave(null);
 =======
-      toast.error(error instanceof Error ? error.message : 'Error al salir del partido');
+      
+      alert('Has salido del partido exitosamente.');
+      
+    } catch (error) {
+      console.error('Error al salir del partido:', error);
+      alert(error instanceof Error ? error.message : 'Error al salir del partido');
     } finally {
       setLeavingMatchId(null);
-      setShowConfirmDialog(false);
->>>>>>> Stashed changes
-      setMatchToLeave(null);
+
     }
   };
 
@@ -210,7 +182,6 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
 
   const isUserCaptain = (match: Match) => {
     const user = auth.currentUser;
-<<<<<<< Updated upstream
     if (!user) {
       return false;
     }
@@ -219,7 +190,7 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
 =======
     if (!user) return false;
     return match.captainId === user.uid;
->>>>>>> Stashed changes
+
   };
 
   const canLeaveMatch = (match: Match) => {
@@ -367,11 +338,10 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
                     
                     {canLeave && (
                       <button
-<<<<<<< Updated upstream
                         onClick={() => handleLeaveClick(match.id, match.courtName)}
 =======
-                        onClick={() => promptLeaveMatch(match.id, match.courtName)}
->>>>>>> Stashed changes
+                        onClick={() => handleLeaveMatch(match.id, match.courtName)}
+
                         disabled={leavingMatchId === match.id}
                         className={`px-4 py-2 rounded-lg font-medium ${
                           leavingMatchId === match.id
@@ -408,17 +378,13 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
           </div>
         )}
       </div>
-<<<<<<< Updated upstream
 
       {/* Diálogo de Confirmación */}
-=======
->>>>>>> Stashed changes
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-<<<<<<< Updated upstream
               Vas a salir del partido "{matchToLeave?.name}". Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -430,17 +396,11 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
             >
               Sí, salir del partido
             </AlertDialogAction>
-=======
-              ¿Estás seguro de que quieres salir del partido "{matchToLeave?.name}"? Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setMatchToLeave(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmLeaveMatch}>Salir del partido</AlertDialogAction>
->>>>>>> Stashed changes
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+=======
+
     </div>
   );
 }

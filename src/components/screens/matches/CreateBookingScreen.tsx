@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { AppHeader } from '../../common/AppHeader';
 import { doc, getDoc, DocumentData } from 'firebase/firestore';
 import { db, auth } from '../../../Firebase/firebaseConfig';
-import { toast } from 'sonner';
 import { createBooking, getBookingsForDate } from '../../../services/bookingService';
+import { startBookingCheckout } from '../../../services/paymentService';
 
 interface CreateBookingScreenProps {
   onBack: () => void;
@@ -27,7 +27,7 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
   useEffect(() => {
     const fetchCourtData = async () => {
       try {
-        const courtRef = doc(db, 'courts', courtId);
+        const courtRef = doc(db, 'cancha', courtId);
         const courtSnap = await getDoc(courtRef);
         if (courtSnap.exists()) {
           const data = courtSnap.data();
@@ -102,13 +102,15 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
         duration: 60,
         price: court.pricePerHour,
       };
-<<<<<<< Updated upstream
+
       await createBooking(bookingData);
       toast.success('¡Reserva confirmada exitosamente!', {
         description: `Tu reserva para ${court.name} el ${selectedDate.toLocaleDateString()} a las ${selectedTime} ha sido guardada.`,
       });
       onNavigate('my-bookings'); // Navegar a una pantalla de "Mis Reservas"
 =======
+=======
+
       const bookingId = await createBooking(bookingData);
       try {
         await startBookingCheckout({
@@ -118,12 +120,18 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
           payerEmail: currentUser.email || null,
         });
       } catch (e) {
+
         toast.error('La reserva quedó pendiente de pago. No se pudo abrir el checkout.');
         onNavigate('my-bookings');
       }
->>>>>>> Stashed changes
+
+=======
+        alert('La reserva quedó pendiente de pago. No se pudo abrir el checkout.');
+        onNavigate('my-bookings');
+      }
+
     } catch (err: any) {
-      toast.error('Error al reservar', { description: err.message });
+      setError(err.message);
     } finally {
       setBookingLoading(false);
     }

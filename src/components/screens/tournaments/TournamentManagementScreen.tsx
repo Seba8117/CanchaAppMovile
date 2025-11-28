@@ -7,7 +7,6 @@ import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Avatar, AvatarFallback } from '../../ui/avatar';
 import { AppHeader } from '../../common/AppHeader';
-import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../../ui/alert-dialog';
 
 interface TournamentManagementScreenProps {
@@ -18,6 +17,32 @@ interface TournamentManagementScreenProps {
 
 export function TournamentManagementScreen({ onBack, onNavigate, tournament }: TournamentManagementScreenProps) {
   const [selectedTab, setSelectedTab] = useState('overview');
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#f4b400] via-[#f4b400] to-[#e6a200]">
+      <AppHeader 
+        title="Gestión de Torneo" 
+        leftContent={
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft size={20} />
+          </Button>
+        }
+      />
+
+      <div className="p-4 pb-20 space-y-6">
+        <div className="flex flex-col items-center text-center mb-2">
+          <h2 className="text-[#172c44] text-2xl font-bold">🏆 Torneos</h2>
+          <p className="text-[#172c44]/70 text-sm mt-1">Próximamente</p>
+        </div>
+
+        <Card className="bg-white/90 backdrop-blur-sm rounded-2xl">
+          <CardContent className="p-6 text-center space-y-2">
+            <p className="text-[#172c44] font-semibold">Estamos trabajando en esta sección</p>
+            <p className="text-[#172c44] text-sm">Pronto podrás gestionar tus torneos desde aquí</p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 
   // Datos de ejemplo del torneo
   const tournamentData = tournament || {
@@ -112,14 +137,13 @@ export function TournamentManagementScreen({ onBack, onNavigate, tournament }: T
   const handleTeamAction = (teamId: number, action: 'approve' | 'reject' | 'view') => {
     switch (action) {
       case 'approve':
-        toast.success(`Equipo ${teamId} aprobado`);
+        alert(`Equipo ${teamId} aprobado`);
         break;
       case 'reject':
-<<<<<<< Updated upstream
         toast.warning(`Equipo ${teamId} rechazado`);
-=======
-        toast.error(`Equipo ${teamId} rechazado`);
->>>>>>> Stashed changes
+
+        alert(`Equipo ${teamId} rechazado`);
+
         break;
       case 'view':
         // Navegar a detalles del equipo
@@ -129,7 +153,7 @@ export function TournamentManagementScreen({ onBack, onNavigate, tournament }: T
   };
 
   const handleDeleteTournament = () => {
-    toast.success('Torneo eliminado exitosamente');
+    alert('Torneo eliminado exitosamente');
     onBack();
   };
 
