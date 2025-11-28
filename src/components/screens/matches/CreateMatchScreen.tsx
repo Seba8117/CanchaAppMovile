@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, MapPin, Calendar, Clock, Users, DollarSign, Crown, Shield } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -438,7 +439,22 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       toast.success("¡Partido creado exitosamente!", {
         description: `Tu partido en "${court.name}" ha sido publicado.`,
       });
+<<<<<<< Updated upstream
       onBack(); // Vuelve a la pantalla de inicio
+=======
+      if (paymentMode === 'immediate') {
+        try {
+          await updateDoc(doc(db, 'matches', matchId), { paymentStatus: 'pending' });
+          await startMatchCheckout({ matchId, title: `Partido en ${court.name}`, price: (court.pricePerHour || 0) * matchDuration, payerEmail: currentUser.email || null });
+        } catch {
+          toast.error('No se pudo iniciar el pago. El partido quedó con pago pendiente.');
+          onBack();
+        }
+      } else {
+        toast.success('¡Partido creado! Podrás pagar antes de iniciar el partido.');
+        onBack();
+      }
+>>>>>>> Stashed changes
     } catch (err: any) {
       setError(err.message || 'Error al crear el partido');
       toast.error('No se pudo publicar el partido', { description: err.message });

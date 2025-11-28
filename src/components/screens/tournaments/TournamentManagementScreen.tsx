@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, Trophy, Users, Calendar, Settings, Eye, Edit, Trash2, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -114,7 +115,11 @@ export function TournamentManagementScreen({ onBack, onNavigate, tournament }: T
         toast.success(`Equipo ${teamId} aprobado`);
         break;
       case 'reject':
+<<<<<<< Updated upstream
         toast.warning(`Equipo ${teamId} rechazado`);
+=======
+        toast.error(`Equipo ${teamId} rechazado`);
+>>>>>>> Stashed changes
         break;
       case 'view':
         // Navegar a detalles del equipo
@@ -363,7 +368,7 @@ export function TournamentManagementScreen({ onBack, onNavigate, tournament }: T
                 <Button 
                   variant="outline" 
                   className="w-full"
-                  onClick={() => alert('Generar fixture')}
+                  onClick={() => toast('Próximamente: Generar fixture')}
                 >
                   <Calendar size={16} className="mr-2" />
                   Generar Fixture
@@ -372,7 +377,7 @@ export function TournamentManagementScreen({ onBack, onNavigate, tournament }: T
                 <Button 
                   variant="outline" 
                   className="w-full"
-                  onClick={() => alert('Exportar datos')}
+                  onClick={() => toast('Próximamente: Exportar datos')}
                 >
                   Exportar Lista de Equipos
                 </Button>

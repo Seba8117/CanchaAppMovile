@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { ArrowLeft, Trophy, Users, Calendar, MapPin, Clock, Star, Award, Info, CheckCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -114,12 +115,12 @@ export function TournamentDetailScreen({ onBack, tournament, userType = 'player'
 
   const handleRegistration = () => {
     if (userType === 'owner') {
-      alert('Los dueños de canchas no pueden inscribirse en torneos');
+      toast.error('Los dueños de canchas no pueden inscribirse en torneos');
       return;
     }
     
     setIsRegistered(true);
-    alert('¡Inscripción exitosa! Te contactaremos pronto con más detalles.');
+    toast.success('¡Inscripción exitosa! Te contactaremos pronto con más detalles.');
   };
 
   const getRegisteredTeamsCount = () => {

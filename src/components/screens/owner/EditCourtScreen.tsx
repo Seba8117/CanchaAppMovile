@@ -187,10 +187,20 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
   // --- LÓGICA DE ELIMINAR (BONUS) ---
   const handleConfirmDelete = async () => {
     try {
+<<<<<<< Updated upstream
       await deleteDoc(doc(db, "courts", courtData.id)); 
       toast.success('Cancha eliminada', {
         description: `La cancha "${formData.name}" ha sido eliminada permanentemente.`,
       });
+=======
+      const currentUser = auth.currentUser;
+      if (!currentUser || currentUser.uid !== courtData.ownerId) {
+        setError('No tienes permiso para eliminar esta cancha.');
+        return;
+      }
+      await deleteDoc(doc(db, "cancha", courtData.id));
+      toast.success('Cancha eliminada.');
+>>>>>>> Stashed changes
       onBack(); // Regresar (la pantalla anterior se actualizará sola)
     } catch (err) {
       console.error("Error al eliminar la cancha: ", err);

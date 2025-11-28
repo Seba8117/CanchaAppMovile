@@ -47,10 +47,33 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
+<<<<<<< Updated upstream
       allow read, write: if request.auth.uid in resource.data.participantsUids;
+=======
+      // Un usuario SÓLO puede leer un chat si su ID está en la lista de participantes.
+      // Esto es lo que soluciona tu error de "permiso denegado".
+      allow read: if request.auth != null && request.auth.uid in resource.data.participantsUids;
+      
+      // Un usuario autenticado puede crear o actualizar un chat (al unirse a un partido)
+      allow create, update: if request.auth != null; 
+      
+      // El capitán puede borrar el chat del partido
+      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+
+      // Permitir que los participantes lean y escriban mensajes en la subcolección
+>>>>>>> Stashed changes
       match /messages/{messageId} {
         allow read, create: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantsUids;
       }
+    }
+    
+    // Reglas para notificaciones
+    match /notifications/{notificationId} {
+      // El capitán del partido puede crear notificaciones de cancelación
+      allow create: if request.auth != null &&
+        get(/databases/$(database)/documents/matches/$(request.resource.data.data.matchId)).data.captainId == request.auth.uid;
+      // El usuario puede leer, actualizar (marcar como leída) y borrar sus propias notificaciones
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
   }
 }
