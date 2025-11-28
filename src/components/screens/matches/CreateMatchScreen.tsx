@@ -482,34 +482,22 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
         system: true
       });
 
-      onBack(); // Vuelve a la pantalla de inicio
-=======
-=======
-
       if (paymentMode === 'immediate') {
         try {
           await updateDoc(doc(db, 'matches', matchId), { paymentStatus: 'pending' });
           await startMatchCheckout({ matchId, title: `Partido en ${court.name}`, price: (court.pricePerHour || 0) * matchDuration, payerEmail: currentUser.email || null });
-        } catch {
-
-          toast.error('No se pudo iniciar el pago. El partido quedó con pago pendiente.');
+        } catch (paymentError) {
+          console.error('Error al iniciar el pago:', paymentError);
+          toast.error('No se pudo iniciar el pago.', { description: 'El partido fue creado con pago pendiente. Puedes pagar más tarde.' });
           onBack();
         }
       } else {
-        toast.success('¡Partido creado! Podrás pagar antes de iniciar el partido.');
-        onBack();
-      }
-
-=======
-          alert('No se pudo iniciar el pago. El partido quedó con pago pendiente.');
-          onBack();
-        }
-      } else {
-        alert('¡Partido creado! Podrás pagar antes de iniciar el partido.');
+        toast.success('¡Partido creado!', { description: 'Podrás pagar antes de iniciar el partido.' });
         onBack();
       }
 
     } catch (err: any) {
+      console.error('Error general al crear el partido:', err);
       setError(err.message || 'Error al crear el partido');
     } finally {
       setLoading(false);

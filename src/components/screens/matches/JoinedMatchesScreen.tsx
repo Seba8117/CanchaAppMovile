@@ -40,8 +40,6 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
 
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [matchToLeave, setMatchToLeave] = useState<{ id: string; name: string } | null>(null);
-=======
-
 
   // Cargar partidos del usuario
   useEffect(() => {
@@ -58,23 +56,8 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
           return;
         }
         const userId = user.uid;
-=======
-        
-        // TODO: Obtener el ID del usuario actual del contexto de autenticación
-        const userId = 'current-user-id';
-
         const userMatches = await getMatchesForPlayer(userId);
-        
         setMatches(userMatches as Match[]);
-=======
-        
-        const user = auth.currentUser;
-        if (user) {
-          const userMatches = await getMatchesForPlayer(user.uid);
-          setMatches(userMatches as Match[]);
-        } else {
-          setError("Debes iniciar sesión para ver tus partidos.");
-        }
 
       } catch (err) {
         console.error('Error al cargar partidos:', err);
@@ -95,21 +78,20 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
   const handleConfirmLeave = async () => {
     if (!matchToLeave) return;
 
-    if (!confirmed) return;
-
     try {
-      setLeavingMatchId(matchId);
+      setLeavingMatchId(matchToLeave.id);
       
-      // TODO: Obtener el ID del usuario actual del contexto de autenticación
-      const userId = 'current-user-id';
+      const user = auth.currentUser;
+      if (!user) {
+        toast.error('Error', { description: 'Debes iniciar sesión para salir de un partido.' });
+        return;
+      }
+      const userId = user.uid;
       
-      await leaveMatch(matchId, userId);
-
-=======
-      
+      await leaveMatch(matchToLeave.id, userId);
 
       // Actualizar la lista de partidos
-      const updatedMatches = await getMatchesForPlayer(user.uid);
+      const updatedMatches = await getMatchesForPlayer(userId);
       setMatches(updatedMatches as Match[]);
 
       toast.success('Has salido del partido exitosamente.');
@@ -120,16 +102,6 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
     } finally {
       setLeavingMatchId(null);
       setMatchToLeave(null);
-=======
-      
-      alert('Has salido del partido exitosamente.');
-      
-    } catch (error) {
-      console.error('Error al salir del partido:', error);
-      alert(error instanceof Error ? error.message : 'Error al salir del partido');
-    } finally {
-      setLeavingMatchId(null);
-
     }
   };
 
@@ -187,10 +159,6 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
     }
     const userId = user.uid;
     return match.captainId === userId;
-=======
-    if (!user) return false;
-    return match.captainId === user.uid;
-
   };
 
   const canLeaveMatch = (match: Match) => {
@@ -339,8 +307,6 @@ export function JoinedMatchesScreen({ onBack, onNavigate }: JoinedMatchesScreenP
                     {canLeave && (
                       <button
                         onClick={() => handleLeaveClick(match.id, match.courtName)}
-=======
-                        onClick={() => handleLeaveMatch(match.id, match.courtName)}
 
                         disabled={leavingMatchId === match.id}
                         className={`px-4 py-2 rounded-lg font-medium ${

@@ -108,8 +108,7 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
         description: `Tu reserva para ${court.name} el ${selectedDate.toLocaleDateString()} a las ${selectedTime} ha sido guardada.`,
       });
       onNavigate('my-bookings'); // Navegar a una pantalla de "Mis Reservas"
-=======
-=======
+
 
       const bookingId = await createBooking(bookingData);
       try {
@@ -125,7 +124,7 @@ export function CreateBookingScreen({ onBack, onNavigate, courtId }: CreateBooki
         onNavigate('my-bookings');
       }
 
-=======
+
         alert('La reserva quedó pendiente de pago. No se pudo abrir el checkout.');
         onNavigate('my-bookings');
       }

@@ -105,11 +105,6 @@ export function AvailableMatchesScreen({ onBack, onNavigate }: AvailableMatchesS
       console.error('Error al unirse al partido:', error);
 
       toast.error('Error al unirse', { description: error instanceof Error ? error.message : 'No se pudo unir al partido.' });
-=======
-      toast.error(error instanceof Error ? error.message : 'Error al unirse al partido');
-
-=======
-      alert(error instanceof Error ? error.message : 'Error al unirse al partido');
 
     } finally {
       setJoiningMatchId(null);
