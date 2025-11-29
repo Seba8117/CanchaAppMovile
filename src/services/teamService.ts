@@ -15,6 +15,7 @@ import {
   arrayRemove,
   increment,
   DocumentData,
+  runTransaction,
 } from 'firebase/firestore';
 
 export interface TeamMember {
@@ -194,31 +195,26 @@ export const getTeamById = async (teamId: string): Promise<DocumentData | null> 
 export const joinTeam = async (teamId: string, userId: string, userName: string): Promise<boolean> => {
   try {
     const teamRef = doc(db, 'teams', teamId);
-    const teamSnap = await getDoc(teamRef);
-    
-    if (!teamSnap.exists()) {
-      throw new Error("El equipo no existe.");
-    }
-    
-    const teamData = teamSnap.data();
-    
-    // Verificar si el equipo está lleno
-    if (teamData.currentPlayers >= teamData.maxPlayers) {
-      throw new Error("El equipo está lleno.");
-    }
-    
-    // Verificar si el usuario ya es miembro
-    if (teamData.members.includes(userId)) {
-      throw new Error("Ya eres miembro de este equipo.");
-    }
-    
-    // Agregar el usuario al equipo
-    await updateDoc(teamRef, {
-      members: arrayUnion(userId),
-      currentPlayers: increment(1),
-      updatedAt: serverTimestamp(),
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(teamRef);
+      if (!snap.exists()) {
+        throw new Error("El equipo no existe.");
+      }
+      const data = snap.data() as any;
+      const members: string[] = Array.from(new Set((data.members || []).filter(Boolean)));
+      if (members.includes(userId)) {
+        throw new Error("Ya eres miembro de este equipo.");
+      }
+      if (typeof data.maxPlayers === 'number' && members.length >= data.maxPlayers) {
+        throw new Error("El equipo está lleno.");
+      }
+      const newCount = members.length + 1;
+      tx.update(teamRef, {
+        members: arrayUnion(userId),
+        currentPlayers: newCount,
+        updatedAt: serverTimestamp(),
+      });
     });
-    
     return true;
   } catch (error) {
     console.error("Error al unirse al equipo: ", error);
@@ -235,31 +231,51 @@ export const joinTeam = async (teamId: string, userId: string, userName: string)
 export const leaveTeam = async (teamId: string, userId: string): Promise<boolean> => {
   try {
     const teamRef = doc(db, 'teams', teamId);
-    const teamSnap = await getDoc(teamRef);
-    
-    if (!teamSnap.exists()) {
-      throw new Error("El equipo no existe.");
-    }
-    
-    const teamData = teamSnap.data();
-    
-    // Verificar si el usuario es el capitán
-    if (teamData.captainId === userId) {
-      throw new Error("El capitán no puede abandonar el equipo. Transfiere el liderazgo primero.");
-    }
-    
-    // Remover el usuario del equipo
-    await updateDoc(teamRef, {
-      members: arrayRemove(userId),
-      currentPlayers: increment(-1),
-      updatedAt: serverTimestamp(),
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(teamRef);
+      if (!snap.exists()) {
+        throw new Error("El equipo no existe.");
+      }
+      const data = snap.data() as any;
+      if (data.captainId === userId) {
+        throw new Error("El capitán no puede abandonar el equipo. Transfiere el liderazgo primero.");
+      }
+      const members: string[] = Array.from(new Set((data.members || []).filter(Boolean)));
+      const newCount = Math.max(0, members.includes(userId) ? members.length - 1 : members.length);
+      tx.update(teamRef, {
+        members: arrayRemove(userId),
+        currentPlayers: newCount,
+        updatedAt: serverTimestamp(),
+      });
     });
-    
     return true;
   } catch (error) {
     console.error("Error al salir del equipo: ", error);
     throw error;
   }
+};
+
+export const reconcileTeamCounts = async (teamId: string): Promise<void> => {
+  try {
+    const teamRef = doc(db, 'teams', teamId);
+    const snap = await getDoc(teamRef);
+    if (!snap.exists()) return;
+    const data = snap.data() as any;
+    const members: string[] = Array.from(new Set((data.members || []).filter(Boolean)));
+    const uniqueCount = members.length;
+    if (typeof data.currentPlayers === 'number' && data.currentPlayers !== uniqueCount) {
+      await updateDoc(teamRef, { currentPlayers: uniqueCount, updatedAt: serverTimestamp() });
+      try {
+        await addDoc(collection(db, 'teams', teamId, 'logs'), {
+          type: 'consistency_fix',
+          expected: uniqueCount,
+          actual: data.currentPlayers,
+          members,
+          createdAt: serverTimestamp(),
+        });
+      } catch {}
+    }
+  } catch {}
 };
 
 /**

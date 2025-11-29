@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 // 1. AÑADIDO 'MessageSquare'
-import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare } from 'lucide-react';
+import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare, Star } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -86,6 +86,13 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
       if (!currentUser) return;
 
       try {
+        const ensureBookingsIndex = async () => {
+          try {
+            const base = (import.meta as any).env?.VITE_MP_API_URL;
+            if (!base) return;
+            await fetch(`${String(base).replace(/\/$/, '')}/firestore/indexes/ensure-bookings`, { method: 'POST' });
+          } catch {}
+        };
         // 1) Canchas activas del dueño
         const courtsQ = query(
           collection(db, 'cancha'),
@@ -103,7 +110,18 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           where('date', '>=', Timestamp.fromDate(monthRanges.currentStart)),
           where('date', '<=', Timestamp.fromDate(monthRanges.currentEnd))
         );
-        const currentBookingsSnap = await getDocs(currentBookingsQ);
+        let currentBookingsSnap;
+        try {
+          currentBookingsSnap = await getDocs(currentBookingsQ);
+        } catch (e: any) {
+          const msg = String(e?.message || '');
+          if (msg.includes('index') || msg.includes('requires an index')) {
+            await ensureBookingsIndex();
+            currentBookingsSnap = await getDocs(currentBookingsQ);
+          } else {
+            throw e;
+          }
+        }
         const currentBookings = currentBookingsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const totalBookings = currentBookings.length;
         const monthlyRevenue = currentBookings.reduce((sum, b: any) => sum + (Number(b.price) || 0), 0);
@@ -119,7 +137,18 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           where('date', '>=', Timestamp.fromDate(dayStart)),
           where('date', '<=', Timestamp.fromDate(dayEnd))
         );
-        const bookingsTodaySnap = await getDocs(bookingsTodayQ);
+        let bookingsTodaySnap;
+        try {
+          bookingsTodaySnap = await getDocs(bookingsTodayQ);
+        } catch (e: any) {
+          const msg = String(e?.message || '');
+          if (msg.includes('index') || msg.includes('requires an index')) {
+            await ensureBookingsIndex();
+            bookingsTodaySnap = await getDocs(bookingsTodayQ);
+          } else {
+            throw e;
+          }
+        }
         const bookingsTodayCount = bookingsTodaySnap.size;
 
         // 3) Ingresos del mes anterior para variación
@@ -129,7 +158,18 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           where('date', '>=', Timestamp.fromDate(monthRanges.prevStart)),
           where('date', '<=', Timestamp.fromDate(monthRanges.prevEnd))
         );
-        const prevBookingsSnap = await getDocs(prevBookingsQ);
+        let prevBookingsSnap;
+        try {
+          prevBookingsSnap = await getDocs(prevBookingsQ);
+        } catch (e: any) {
+          const msg = String(e?.message || '');
+          if (msg.includes('index') || msg.includes('requires an index')) {
+            await ensureBookingsIndex();
+            prevBookingsSnap = await getDocs(prevBookingsQ);
+          } else {
+            throw e;
+          }
+        }
         const prevRevenue = prevBookingsSnap.docs
           .map(d => d.data())
           .reduce((sum, b: any) => sum + (Number(b.price) || 0), 0);
@@ -368,7 +408,8 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     let polling: any;
     const lastFetchRef: { current: number } = { current: 0 };
     const retryRef: { current: number } = { current: 0 };
-    const apiUrl = (import.meta as any).env?.VITE_COURTS_API_URL || 'https://api.canchaapp.local/courts';
+    const apiUrlEnv = (import.meta as any).env?.VITE_COURTS_API_URL;
+    const apiUrl = apiUrlEnv ? String(apiUrlEnv) : '';
     const apiKey = (import.meta as any).env?.VITE_COURTS_API_KEY;
     const fallbackFromFirestore = async () => {
       try {
@@ -389,6 +430,11 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
       if (!navigator.onLine) {
         setCourtsError('Sin conexión a internet');
         setCourtsErrorType('offline');
+        return;
+      }
+      if (!apiUrl) {
+        await fallbackFromFirestore();
+        setLoadingCourts(false);
         return;
       }
       const now = Date.now();
@@ -454,7 +500,9 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     refresh(true);
     const onManual = () => refresh(true);
     window.addEventListener('manual-refresh', onManual);
-    polling = setInterval(() => refresh(false), 15000);
+    if (apiUrl) {
+      polling = setInterval(() => refresh(false), 15000);
+    }
     return () => {
       if (polling) clearInterval(polling);
       window.removeEventListener('manual-refresh', onManual);
@@ -657,69 +705,37 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             </CardContent>
           </Card>
 
-          {/* --- TARJETA DE CHATS (YA ESTABA AQUÍ) --- */}
-          <Card 
-            className="bg-gradient-to-br from-cyan-500 via-blue-600 to-sky-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2"
-            onClick={() => onNavigate('owner-chat')} // Navega a la pantalla de chat del dueño
-          >
+          {/* Tarjeta de chats removida para simplificar la interfaz */}
+
+          {/* Tarjeta de torneos removida para simplificar la interfaz */}
+
+          {/* Rating Card - Wide to match Ingresos */}
+          <Card className="bg-gradient-to-br from-orange-500 via-amber-600 to-yellow-600 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2">
             <CardContent className="p-5 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
+              <div className="absolute bottom-0 left-1/3 w-20 h-20 bg-white/5 rounded-full translate-y-10"></div>
               <div className="relative z-10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                      <MessageSquare size={26} className="text-white" />
+                      <Star size={26} className="text-white" />
                     </div>
                     <div>
-                      <p className="font-['Outfit'] font-black text-4xl text-white leading-none">Chats</p>
-                      <p className="font-['Outfit'] font-semibold text-sm text-cyan-100 mt-1">💬 Mis Conversaciones</p>
+                      <p className="font-['Outfit'] font-black text-4xl text-white leading-none">{stats.averageRating}</p>
+                      <p className="font-['Outfit'] font-semibold text-sm text-orange-100 mt-1">🌟 Rating Promedio</p>
                     </div>
                   </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {/* --- FIN DE LA TARJETA DE CHATS --- */}
-
-          {/* Torneos Card */}
-          <Card className="bg-gradient-to-br from-violet-500 via-purple-600 to-fuchsia-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
-            <CardContent className="p-5 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-18 h-18 bg-white/10 rounded-full -translate-y-8 -translate-x-8"></div>
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <Trophy size={22} className="text-white" />
-                  </div>
-                  <div className="text-right">
-                    <p className="font-['Outfit'] font-black text-3xl text-white leading-none">{stats.activeTournaments}</p>
+                  <div className="text-right text-white/80">
+                    <p className="font-['Outfit'] font-medium text-xs">Promedio de reseñas</p>
                   </div>
                 </div>
-                <p className="font-['Outfit'] font-semibold text-sm text-violet-100">🏆 Torneos Activos</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Rating Card */}
-          <Card className="bg-gradient-to-br from-rose-500 via-pink-600 to-red-600 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
-            <CardContent className="p-5 relative overflow-hidden">
-              <div className="absolute bottom-0 right-0 w-16 h-16 bg-white/10 rounded-full translate-y-6 translate-x-6"></div>
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <span className="text-white text-lg">⭐</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-['Outfit'] font-black text-3xl text-white leading-none">{stats.averageRating}</p>
-                  </div>
-                </div>
-                <p className="font-['Outfit'] font-semibold text-sm text-rose-100">🌟 Rating Promedio</p>
               </div>
             </CardContent>
           </Card>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 bg-white/70 backdrop-blur-md rounded-2xl p-1.5 shadow-lg border border-white/20">
+          <TabsList className="grid w-full grid-cols-2 bg-white/70 backdrop-blur-md rounded-2xl p-1.5 shadow-lg border border-white/20">
             <TabsTrigger 
               value="overview" 
               className="rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg text-slate-600 font-['Outfit'] font-semibold text-sm transition-all duration-300 data-[state=active]:scale-105"
@@ -732,12 +748,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             >
               🏟️ Canchas
             </TabsTrigger>
-            <TabsTrigger 
-              value="tournaments" 
-              className="rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-lg text-slate-600 font-['Outfit'] font-semibold text-sm transition-all duration-300 data-[state=active]:scale-105"
-            >
-              🏆 Torneos
-            </TabsTrigger>
+            {/* Trigger de Torneos removido */}
           </TabsList>
 
           {/* Overview Tab */}
@@ -756,7 +767,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
               {recentBookings.map((booking, index) => (
                 <Card key={booking.id} className="bg-white/80 backdrop-blur-sm shadow-xl hover:shadow-2xl border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden">
                   <CardContent className="p-5 relative">
-                    <div className={`absolute top-0 left-0 right-0 h-1 ${
+                    <div className={`absolute top-0 inset-x-0 h-1.5 ${
                       booking.status === 'confirmed' ? 'bg-gradient-to-r from-emerald-500 to-teal-500' :
                       booking.status === 'pending' ? 'bg-gradient-to-r from-orange-500 to-amber-500' :
                       'bg-gradient-to-r from-indigo-500 to-purple-500'
@@ -849,7 +860,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                 {Array.from({ length: 3 }).map((_, i) => (
                   <Card key={i} className="bg-white/60 backdrop-blur-sm border-0 rounded-2xl shadow-xl">
                     <CardContent className="p-5 relative">
-                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-200 to-indigo-200"></div>
+                      <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-200 to-indigo-200"></div>
                       <div className="animate-pulse">
                         <div className="h-4 bg-slate-200 rounded w-1/3 mb-4"></div>
                         <div className="space-y-2">
@@ -885,7 +896,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                 } shadow-xl hover:shadow-2xl`}>
                   <CardContent className="p-5 relative">
                     {/* Línea de color superior como en overview */}
-                    <div className={`absolute top-0 left-0 right-0 h-1 ${
+                    <div className={`absolute top-0 inset-x-0 h-1.5 ${
                       court.sport === 'Fútbol' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
                       court.sport === 'Básquetball' ? 'bg-gradient-to-r from-orange-500 to-red-500' :
                       'bg-gradient-to-r from-blue-500 to-indigo-500'
@@ -982,18 +993,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             </div>
           </TabsContent>
 
-          <TabsContent value="tournaments" className="space-y-6">
-            <div className="flex flex-col items-center text-center mb-6">
-              <h2 className="font-['Outfit'] font-black text-2xl bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">🏆 Torneos</h2>
-              <p className="font-['Outfit'] font-medium text-sm text-slate-500 mt-1">Proximamente</p>
-            </div>
-            <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl">
-              <CardContent className="p-6 text-center space-y-2">
-                <p className="font-['Outfit'] font-bold text-lg text-slate-800">Estamos trabajando en esta sección</p>
-                <p className="font-['Outfit'] text-sm text-slate-600">Pronto podrás crear y gestionar torneos desde aquí</p>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {/* Sección de torneos removida */}
         </Tabs>
       </div>
     </div>

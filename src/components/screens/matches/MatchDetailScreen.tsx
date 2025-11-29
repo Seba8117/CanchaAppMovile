@@ -23,7 +23,7 @@ import { getUserLocationCached, haversineKm, mapsUrlFor } from '../../../service
 
 import { auth, db } from '../../../Firebase/firebaseConfig';
 import { doc, getDoc, updateDoc, setDoc, collection, addDoc, serverTimestamp, arrayUnion, increment } from 'firebase/firestore';
-import { startMatchCheckout, checkPaymentStatus } from '../../../services/paymentService';
+import { startMatchCheckout, checkPaymentStatus, startOwnerMpConnect } from '../../../services/paymentService';
 
 interface MatchDetailScreenProps {
     match: any;
@@ -204,29 +204,34 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             if (!uid || !isOwner) { setError('Solo el organizador puede iniciar el partido.'); return; }
             if (!matchId) { setError('No se encontró el ID del partido.'); return; }
             setStarting(true);
+            const paymentsEnabled = String((import.meta as any).env?.VITE_PAYMENTS_ENABLED) === 'true';
             const statusField = String(data?.paymentStatus || paymentStatusLocal || 'pending');
-            if (statusField !== 'approved') {
-                try {
-                    const chk = await checkPaymentStatus(matchId);
-                    setPaymentStatusLocal(chk.status);
-                    if (chk.status !== 'approved') {
+            if (paymentsEnabled) {
+                if (statusField !== 'approved') {
+                    try {
+                        const chk = await checkPaymentStatus(matchId);
+                        setPaymentStatusLocal(chk.status);
+                        if (chk.status !== 'approved') {
+                            await startMatchCheckout({ matchId, title: `Pago de partido`, price: totalCost, payerEmail: auth?.currentUser?.email || null });
+                            setStarting(false);
+                            return;
+                        }
+                    } catch {
                         await startMatchCheckout({ matchId, title: `Pago de partido`, price: totalCost, payerEmail: auth?.currentUser?.email || null });
                         setStarting(false);
                         return;
                     }
-                } catch {
-                    await startMatchCheckout({ matchId, title: `Pago de partido`, price: totalCost, payerEmail: auth?.currentUser?.email || null });
-                    setStarting(false);
-                    return;
                 }
+                await updateDoc(doc(db, 'matches', matchId), { status: 'active', paymentStatus: 'approved' });
+            } else {
+                await updateDoc(doc(db, 'matches', matchId), { status: 'active', paymentStatus: 'skipped' });
             }
-            await updateDoc(doc(db, 'matches', matchId), { status: 'active', paymentStatus: 'approved' });
             try {
                 const paymentsRef = collection(db, 'payments');
                 await addDoc(paymentsRef, {
                     matchId,
                     userId: ownerId,
-                    status: 'approved',
+                    status: paymentsEnabled ? 'approved' : 'skipped',
                     amount: totalCost,
                     createdAt: serverTimestamp(),
                 });
@@ -407,6 +412,9 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
                             <div className="mt-3">
                                 <Button className="w-full bg-[#00a884] hover:bg-[#008f73] text-white" onClick={handleStartMatch} disabled={starting}>
                                     {starting ? 'Verificando pago…' : (String(data?.paymentStatus || paymentStatusLocal) === 'approved' ? 'Iniciar Partido' : 'Pagar e Iniciar')}
+                                </Button>
+                                <Button variant="outline" className="w-full mt-2" onClick={async () => { const u = auth.currentUser; if (!u) return; await startOwnerMpConnect(u.uid); }}>
+                                    Conectar Mercado Pago
                                 </Button>
                                 <p className="text-xs text-gray-600 mt-2">Estado de pago: {String(data?.paymentStatus || paymentStatusLocal || 'pending')}</p>
                             </div>

@@ -50,6 +50,7 @@
             "express": "^5.1.0",
             "firebase": "^12.4.0",
             "firebase-admin": "^13.6.0",
+            "google-auth-library": "^10.5.0",
             "input-otp": "^1.4.2",
             "lucide-react": "^0.487.0",
             "mercadopago": "^2.10.0",
@@ -75,7 +76,6 @@
             "typescript": "^5.9.3",
             "vite": "6.3.5",
             "vitest": "^2.1.4"
-
       },
       "scripts": {
             "dev": "vite",

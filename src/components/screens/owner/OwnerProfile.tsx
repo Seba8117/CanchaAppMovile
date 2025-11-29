@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Edit, Star, Building, LogOut, AlertTriangle, Loader2 } from 'lucide-react';
+import { Settings, Edit, Star, Building, LogOut, AlertTriangle, Loader2, Link2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -10,6 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
 import { doc, getDoc, collection, query, where, getCountFromServer } from 'firebase/firestore';
+import { startOwnerMpConnect } from '../../../services/paymentService';
 import { DocumentData } from 'firebase/firestore';
 // --- FIN: Importaciones de Firebase ---
 
@@ -109,28 +110,17 @@ export function OwnerProfile({ onNavigate, onLogout }: OwnerProfileProps) {
               <div>
                 <h1 className="font-['Outfit'] font-black text-2xl mb-1">{ownerData.ownerName}</h1>
                 <p className="font-['Outfit'] font-semibold text-sm opacity-90">{ownerData.businessName}</p>
-                <div className="flex items-center gap-3 mt-2">
-                  <div className="flex items-center gap-1 bg-[#f4b400]/20 rounded-full px-3 py-1">
-                    <Star className="text-[#f4b400]" size={16} fill="currentColor" />
-                    <span className="font-['Outfit'] font-bold">{stats.rating}</span>
-                  </div>
-                  <span className="font-['Outfit'] font-medium text-sm opacity-80">{stats.totalBookings} reservas</span>
-                </div>
+                
               </div>
             </div>
             <Button variant="ghost" size="icon" className="text-white hover:bg-[#f4b400]/20" onClick={() => onNavigate('edit-owner-profile')}>
               <Settings size={22} />
             </Button>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div className="text-center bg-white/20 rounded-2xl p-4">
               <p className="font-['Outfit'] font-black text-3xl">{stats.totalCourts}</p>
               <p className="font-['Outfit'] font-semibold text-sm opacity-80">🏟️ Canchas</p>
-            </div>
-            {/* Otros stats como torneos o ingresos necesitarían más lógica para ser calculados */}
-            <div className="text-center bg-white/20 rounded-2xl p-4">
-               <p className="font-['Outfit'] font-black text-3xl">12</p>
-               <p className="font-['Outfit'] font-semibold text-sm opacity-80">🏆 Torneos</p>
             </div>
           </div>
         </div>
@@ -174,6 +164,12 @@ export function OwnerProfile({ onNavigate, onLogout }: OwnerProfileProps) {
                       <Edit size={18} className="mr-2" />
                       Editar Perfil
                     </Button>
+                    {String((import.meta as any).env?.VITE_MP_OAUTH_ENABLED) === 'true' && (
+                      <Button className="w-full bg-[#00a884] text-white font-bold" onClick={async () => { const u = auth.currentUser; if (!u) return; await startOwnerMpConnect(u.uid); }}>
+                        <Link2 size={18} className="mr-2" />
+                        Conectar Mercado Pago
+                      </Button>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="outline" className="w-full border-red-300 text-red-600 hover:bg-red-50 font-semibold">

@@ -485,7 +485,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       if (paymentMode === 'immediate') {
         try {
           await updateDoc(doc(db, 'matches', matchId), { paymentStatus: 'pending' });
-          await startMatchCheckout({ matchId, title: `Partido en ${court.name}`, price: (court.pricePerHour || 0) * matchDuration, payerEmail: currentUser.email || null });
+          await startMatchCheckout({ matchId, title: `Partido en ${court.name}`, price: (court.pricePerHour || 0) * matchDuration, payerEmail: currentUser.email || null, sellerId: court.ownerId || null, applicationFee: 0 });
         } catch (paymentError) {
           console.error('Error al iniciar el pago:', paymentError);
           toast.error('No se pudo iniciar el pago.', { description: 'El partido fue creado con pago pendiente. Puedes pagar más tarde.' });

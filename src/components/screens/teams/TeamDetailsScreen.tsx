@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../ui/dropdown-menu';
 import { AppHeader } from '../../common/AppHeader';
 import { db, auth } from '../../../Firebase/firebaseConfig';
-import { doc, onSnapshot, collection, query, where, getDocs, getDoc, documentId, updateDoc, arrayRemove, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, getDoc, documentId, updateDoc, arrayRemove, addDoc, serverTimestamp, increment } from 'firebase/firestore';
 
 interface TeamDetailsScreenProps {
   onBack: () => void;
@@ -66,13 +66,36 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
         if (team && team.members && team.members.length === 0) setPlayersData([]);
         return;
       }
-      const memberIds = team.members.slice(0, 10);
+      const uniqueIds = Array.from(new Set((team.members || []).filter(Boolean)));
       try {
         setPermissionError(false);
-        const q = query(collection(db, 'jugador'), where(documentId(), 'in', memberIds));
-        const querySnapshot = await getDocs(q);
-        const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPlayersData(users);
+        const chunks: string[][] = [];
+        for (let i = 0; i < uniqueIds.length; i += 10) {
+          chunks.push(uniqueIds.slice(i, i + 10));
+        }
+        const results = await Promise.all(
+          chunks.map(async (ids) => {
+            const q = query(collection(db, 'jugador'), where(documentId(), 'in', ids));
+            const snap = await getDocs(q);
+            return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          })
+        );
+        const flat = ([] as any[]).concat(...results);
+        const deduped = Array.from(new Map(flat.map(u => [u.id, u])).values());
+        setPlayersData(deduped);
+        if (team?.id && typeof team.currentPlayers === 'number' && team.currentPlayers !== uniqueIds.length) {
+          const teamRef = doc(db, 'teams', team.id);
+          await updateDoc(teamRef, { currentPlayers: uniqueIds.length, updatedAt: serverTimestamp() });
+          try {
+            await addDoc(collection(db, 'teams', team.id, 'logs'), {
+              type: 'consistency_fix',
+              expected: uniqueIds.length,
+              actual: team.currentPlayers,
+              members: uniqueIds,
+              createdAt: serverTimestamp()
+            });
+          } catch {}
+        }
       } catch (error: any) {
         if (error.code === 'permission-denied') {
           setPermissionError(true);
@@ -104,7 +127,7 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
     if (!ok) return;
     try {
       const teamRef = doc(db, 'teams', team.id);
-      await updateDoc(teamRef, { members: arrayRemove(playerId) });
+      await updateDoc(teamRef, { members: arrayRemove(playerId), currentPlayers: increment(-1), updatedAt: serverTimestamp() });
       try {
         const chatRef = doc(db, 'chats', team.id);
         const chatSnap = await getDoc(chatRef);
@@ -229,7 +252,7 @@ export function TeamDetailsScreen({ onBack, teamData, onNavigate }: TeamDetailsS
           <TabsContent value="players" className="space-y-4">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-white text-xl font-semibold">Plantilla</h2>
-              <Badge className="bg-white text-[#172c44] font-bold">{team.members ? team.members.length : 0} miembros</Badge>
+              <Badge className="bg-white text-[#172c44] font-bold">{Array.from(new Set(team.members || [])).length} miembros</Badge>
             </div>
             {permissionError && (
               <div className="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2 text-sm">

@@ -176,9 +176,9 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
   // **VERIFICACIÓN DE CARGA**
   if (loading) {
      return (
-       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#f4b400] via-[#ffd54f] to-[#ffeb3b] p-4 text-[#172c44]">
          <Loader2 className="animate-spin h-12 w-12 mb-4 text-[#00a884]" />
-         <p className="font-semibold text-lg text-gray-700 dark:text-gray-200">Cargando perfil...</p>
+         <p className="font-semibold text-lg">Cargando perfil...</p>
        </div>
      );
   }
@@ -186,18 +186,18 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
   // **VERIFICACIÓN DE ERROR**
   if (error) {
      return (
-       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 text-center">
-         <AlertTriangle className="h-12 w-12 mb-4 text-red-500" />
-         <p className="font-bold text-lg text-red-700 dark:text-red-400">Ocurrió un error</p>
-         <p className="text-red-600 dark:text-red-300">{error}</p>
-         <Button onClick={onBack} className="mt-4 bg-gray-200 text-gray-800 hover:bg-gray-300">Volver</Button>
+       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#f4b400] via-[#ffd54f] to-[#ffeb3b] p-4 text-center">
+         <AlertTriangle className="h-12 w-12 mb-4 text-red-700" />
+         <p className="font-bold text-lg text-red-800">Ocurrió un error</p>
+         <p className="text-red-700">{error}</p>
+         <Button onClick={onBack} className="mt-4 bg-white/80 text-[#172c44] hover:bg-white">Volver</Button>
        </div>
      );
   }
 
   // **RENDERIZADO PRINCIPAL (SI NO HAY CARGA NI ERROR)**
   return (
-    <div className={`min-h-screen ${darkMode ? 'dark' : ''} bg-gray-50 dark:bg-gray-900`}>
+    <div className={`min-h-screen ${darkMode ? 'dark' : ''} bg-gradient-to-br from-[#f4b400] via-[#ffd54f] to-[#ffeb3b]`}>
        <AppHeader
          title="Editar Perfil Empresarial"
          leftContent={
@@ -214,9 +214,9 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
          className="bg-white dark:bg-gray-800 border-b dark:border-gray-700"
        />
 
-      <div className="p-4 space-y-6 pb-20"> {/* Padding bottom */}
+      <div className="p-4 space-y-6 pb-20">
         {/* Logo del Negocio */}
-        <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl">
             <CardHeader><CardTitle className="text-[#172c44] dark:text-white flex items-center gap-2"><Camera size={20} />Logo del Negocio</CardTitle></CardHeader>
             <CardContent className="flex flex-col items-center space-y-4">
               <div className="relative">
@@ -237,7 +237,7 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
         </Card>
 
         {/* Información Personal */}
-        <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl">
           <CardHeader><CardTitle className="text-[#172c44] dark:text-white flex items-center gap-2"><User size={20} />Información Personal</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -262,7 +262,7 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
         </Card>
 
         {/* Información del Negocio */}
-        <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl">
           <CardHeader><CardTitle className="text-[#172c44] dark:text-white flex items-center gap-2"><Building2 size={20} />Información del Negocio</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -302,7 +302,7 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
         </Card>
 
         {/* Detalles del Negocio */}
-        <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl">
           <CardHeader><CardTitle className="text-[#172c44] dark:text-white">Detalles del Negocio</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -333,7 +333,7 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
         </Card>
 
         {/* Configuración de la App */}
-        <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 rounded-2xl">
            <CardHeader><CardTitle className="text-[#172c44] dark:text-white">Configuración</CardTitle></CardHeader>
            <CardContent className="space-y-4">
              <div className="flex items-center justify-between">
@@ -350,11 +350,11 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
          </Card>
 
         {/* Mensaje de error */}
-        {error && (<p className="text-center text-red-600 dark:text-red-400 font-semibold">{error}</p>)}
+        {error && (<p className="text-center text-red-700 font-semibold">{error}</p>)}
 
         {/* Botones de Acción */}
         <div className="flex gap-3">
-          <Button variant="outline" className="flex-1 dark:border-gray-600 dark:text-gray-200" onClick={onBack} disabled={saving}>Cancelar</Button>
+          <Button variant="outline" className="flex-1 bg-white/80 text-[#172c44] hover:bg-white" onClick={onBack} disabled={saving}>Cancelar</Button>
           <Button className="flex-1 bg-[#00a884] hover:bg-[#00a884]/90 text-white" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 size={16} className="mr-2 animate-spin"/> : <Save size={16} className="mr-2" />}
             {saving ? 'Guardando...' : 'Guardar Cambios'}

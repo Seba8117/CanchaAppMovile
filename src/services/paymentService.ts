@@ -18,6 +18,9 @@ export type CreatePreferenceInput = {
   expiration_date_to?: string;
   binary_mode?: boolean;
   statement_descriptor?: string;
+  application_fee?: number;
+  seller_id?: string | null;
+  seller_token?: string | null;
 };
 
 export type CreatePreferenceResponse = {
@@ -81,6 +84,7 @@ export async function startMatchCheckout(opts: {
   title: string;
   price: number;
   payerEmail?: string | null;
+  sellerId?: string | null;
 }) {
   const forced = Number((import.meta as any).env?.VITE_MP_FORCE_AMOUNT);
   const amount = (!isNaN(forced) && forced > 0) ? forced : Math.max(0, Number(opts.price) || 0);
@@ -93,6 +97,7 @@ export async function startMatchCheckout(opts: {
       failure: window.location.origin,
       pending: window.location.origin,
     },
+    seller_id: opts.sellerId || null,
   });
   try {
     await updateDoc(doc(db, 'matches', opts.matchId), {
@@ -116,4 +121,19 @@ export async function checkPaymentStatus(externalRef: string): Promise<{ status:
   if (!res.ok) throw new Error('No se pudo verificar el estado de pago');
   const data = await res.json();
   return { status: data.status, payment_id: data.payment_id || null };
+}
+
+export async function startOwnerMpConnect(sellerId: string) {
+  const base = import.meta.env.VITE_MP_API_URL;
+  if (!base) throw new Error('VITE_MP_API_URL no está configurado');
+  const res = await fetch(`${base.replace(/\/$/, '')}/mp/oauth/start?seller_id=${encodeURIComponent(sellerId)}`);
+  if (!res.ok) throw new Error('No se pudo iniciar conexión MP');
+  const data = await res.json();
+  const url = data?.url;
+  if (!url) throw new Error('URL de conexión inválida');
+  try {
+    await Browser.open({ url, presentationStyle: 'fullscreen' as any });
+  } catch {
+    window.location.href = url;
+  }
 }

@@ -41,6 +41,8 @@ import { CourtDetailScreen } from "./components/screens/owner/CourtDetailScreen"
 import { ChatScreenOwner } from "./components/screens/owner/ChatScreenOwner";
 import { initPush } from "./services/pushService";
 import { Toaster } from "./components/ui/sonner";
+import { toast } from "sonner";
+import { checkPaymentStatus } from "./services/paymentService";
 
 
 
@@ -122,6 +124,27 @@ export default function App() {
     );
     setScreenData(null);
   };
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const mp = sp.get("mp");
+    const ref = sp.get("ref");
+    if (mp === "return" && ref) {
+      checkPaymentStatus(ref)
+        .then((r) => {
+          if (r.status === "approved") {
+            toast.success("Pago aprobado");
+          } else {
+            toast.message("Pago pendiente");
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          const clean = window.location.origin + window.location.pathname;
+          window.history.replaceState(null, "", clean);
+        });
+    }
+  }, []);
 
   if (!isLoggedIn) {
     return (
