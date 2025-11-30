@@ -47,7 +47,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
 
   useEffect(() => {
     const unsub = (auth as any)?.onAuthStateChanged?.((u: any) => {
-      setDisplayName(u?.displayName || 'Usuario');
+      setDisplayName(u?.displayName || (u?.email ? String(u.email).split('@')[0] : 'Usuario'));
     });
     return () => unsub?.();
   }, []);
@@ -67,11 +67,13 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
         const u = (auth as any)?.currentUser;
         const uid = u?.uid;
         if (!uid) return;
-        const ref = doc(db, 'users', uid);
-        const snap = await getDoc(ref);
-        const fromDb = snap.exists() ? (snap.data() as any)?.displayName : null;
+        // Intentar en 'jugador' primero (perfil de jugador)
+        const playerRef = doc(db, 'jugador', uid);
+        const playerSnap = await getDoc(playerRef);
+        const dbName = playerSnap.exists() ? ((playerSnap.data() as any)?.displayName || (playerSnap.data() as any)?.name || (playerSnap.data() as any)?.nombre) : null;
+        // Fallback genérico
         const fallback = u?.displayName || (u?.email ? String(u.email).split('@')[0] : 'Usuario');
-        setDisplayName(fromDb || fallback);
+        setDisplayName(dbName || fallback);
       } catch {}
     };
     fetchDisplayName();

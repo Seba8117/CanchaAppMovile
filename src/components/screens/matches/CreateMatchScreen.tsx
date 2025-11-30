@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { ArrowLeft, MapPin, Calendar, Clock, Users, DollarSign, Crown, Shield } from 'lucide-react';
 import { Button } from '../../ui/button';
@@ -36,6 +36,63 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const [maxPlayers, setMaxPlayers] = useState(10);
   const [pricePerPlayer, setPricePerPlayer] = useState(5000);
   const [description, setDescription] = useState('');
+
+  const dayKeyFor = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00');
+    const idx = d.getDay();
+    return ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][idx];
+  };
+
+  const isUnavailableDay = (court: any | undefined, dateStr: string) => {
+    if (!court || !dateStr) return false;
+    const key = dayKeyFor(dateStr);
+    const cfg: any = (court.availability || {})[key] || { enabled: false };
+    return !cfg.enabled;
+  };
+
+  const clampHourRange = (court: any | undefined, dateStr: string) => {
+    const key = dateStr ? dayKeyFor(dateStr) : '';
+    const cfg: any = key ? (court?.availability || {})[key] : undefined;
+    if (!cfg || cfg.enabled === false) return { start: null as number | null, end: null as number | null };
+    const parseH = (t: string) => parseInt(String(t).split(':')[0], 10);
+    const start = parseH(cfg.start || '00:00');
+    const end = parseH(cfg.end || '00:00');
+    return { start, end };
+  };
+
+  const isPastToday = (dateStr: string, timeStr: string) => {
+    if (!dateStr || !timeStr) return false;
+    const now = new Date();
+    const selected = new Date(dateStr + 'T' + timeStr);
+    const sameDay = now.toDateString() === selected.toDateString();
+    return sameDay && selected.getTime() <= now.getTime();
+  };
+
+  const getCourtCapacity = (court: any | undefined) => {
+    const cap = Number(court?.capacity || court?.maxPlayers || 0);
+    return cap > 0 ? cap : 22;
+  };
+
+  const normalize = (s: any) => {
+    if (!s) return '';
+    return String(s)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[^a-z\s]/g, '')
+      .trim();
+  };
+
+  const sportAliases: Record<string, string[]> = {
+    football: ['futbol', 'futbol ', 'futbol  ', 'futbol', 'football', 'soccer'],
+    basketball: ['basquetball', 'basquet', 'basketball'],
+    tennis: ['tenis', 'tennis'],
+    volleyball: ['voleibol', 'volley', 'volleyball', 'voley'],
+    padel: ['padel', 'padel '],
+    futsal: ['futsal']
+  };
+
+  
 
   const compatibleTeams = myTeams.filter(team => (team.sport?.toLowerCase?.() || '') === selectedSport);
   const selectedTeam = compatibleTeams.length > 0 ? compatibleTeams[0] : null;
@@ -103,6 +160,22 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     checkAvailability();
   }, [selectedCourtId, matchDate]);
 
+  const playerOptions = useMemo(() => {
+    const court = courts.find(c => c.id === selectedCourtId);
+    const cap = getCourtCapacity(court);
+    const opts: number[] = [];
+    for (let i = 2; i <= cap; i++) opts.push(i);
+    return opts.length ? opts : [2, 4, 6];
+  }, [selectedCourtId, courts]);
+
+  useEffect(() => {
+    const court = courts.find(c => c.id === selectedCourtId);
+    const cap = getCourtCapacity(court);
+    if (cap > 0) {
+      setMaxPlayers(prev => Math.min(prev, cap));
+    }
+  }, [selectedCourtId, courts]);
+
   // Efecto para calcular el precio por jugador automáticamente
   useEffect(() => {
     const court = courts.find(c => c.id === selectedCourtId);
@@ -115,13 +188,20 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
 
   const getAvailableTimeSlots = () => {
     const court = courts.find(c => c.id === selectedCourtId);
-    if (!court) return [];
-    const startHour = court.openingTime ? parseInt(String(court.openingTime).split(':')[0]) : 8;
-    const endHour = court.closingTime ? parseInt(String(court.closingTime).split(':')[0]) : 23;
+    if (!court || !matchDate) return [];
+    if (isUnavailableDay(court, matchDate)) return [];
+    const { start: startHour, end: endHour } = clampHourRange(court, matchDate);
+    if (startHour == null || endHour == null) return [];
     const slots: string[] = [];
     for (let i = startHour; i < endHour; i++) {
       const t = `${String(i).padStart(2, '0')}:00`;
       if (!occupiedSlots.includes(t)) slots.push(t);
+    }
+    const now = new Date();
+    const sameDay = new Date(matchDate + 'T00:00:00').toDateString() === now.toDateString();
+    if (sameDay) {
+      const currentHour = now.getHours();
+      return slots.filter(s => parseInt(s.split(':')[0], 10) > currentHour);
     }
     return slots;
   };
@@ -155,11 +235,19 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     </div>
   );
 
+  const filteredCourts = courts.filter((court: any) => {
+    if (!selectedSport) return true;
+    const wantedList = sportAliases[selectedSport] || [normalize(selectedSport)];
+    const courtSportNorm = normalize(court?.sport || '');
+    const courtSportsArrNorm = Array.isArray(court?.sports) ? court.sports.map((s: any) => normalize(s)) : [];
+    return wantedList.includes(courtSportNorm) || courtSportsArrNorm.some((s: string) => wantedList.includes(s));
+  });
+
   const renderStep2 = () => (
     <div className="space-y-6">
       <h2 className="text-white mb-4">Selecciona una cancha</h2>
       <div className="space-y-3">
-        {courts.map((court) => (
+        {filteredCourts.map((court) => (
           <Card 
             key={court.id} 
             className={`cursor-pointer transition-colors ${
@@ -214,6 +302,19 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const renderStep3 = () => (
     <div className="space-y-6">
       <h2 className="text-white mb-4">Configura tu partido</h2>
+      {selectedCourtId && (() => {
+        const court = courts.find(c => c.id === selectedCourtId);
+        const av: any = (court?.availability || {});
+        const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+        const labels: Record<string,string> = {monday:'Lunes',tuesday:'Martes',wednesday:'Miércoles',thursday:'Jueves',friday:'Viernes',saturday:'Sábado',sunday:'Domingo'};
+        const enabledList = days.filter(d => av[d]?.enabled).map(d => `${labels[d]}: ${av[d]?.start} - ${av[d]?.end}`);
+        return (
+          <div className="p-3 bg-white/10 border border-white/20 rounded-lg text-sm text-white">
+            <p><strong>Días disponibles:</strong> {enabledList.length > 0 ? enabledList.join(' • ') : 'Sin disponibilidad configurada'}</p>
+            <p><strong>Capacidad máxima:</strong> {getCourtCapacity(court)} jugadores</p>
+          </div>
+        );
+      })()}
       
       <div className="space-y-4">
         <div>
@@ -224,8 +325,17 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
             type="date"
             className="w-full"
             value={matchDate}
-            onChange={(e) => setMatchDate(e.target.value)}
-            min={new Date().toISOString().split("T")[0]} // No se pueden crear partidos en el pasado
+            onChange={(e) => {
+              const val = e.target.value;
+              const court = courts.find(c => c.id === selectedCourtId);
+              if (court && isUnavailableDay(court, val)) {
+                toast.error('Día no disponible', { description: 'Esta cancha no está disponible en el día seleccionado.' });
+                setMatchDate('');
+                return;
+              }
+              setMatchDate(val);
+            }}
+            min={new Date().toISOString().split("T")[0]}
           />
         </div>
 
@@ -233,7 +343,20 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           <label className="block text-sm text-white mb-2">
             Hora de inicio
           </label>
-          <Select value={matchTime} onValueChange={setMatchTime}>
+          <Select value={matchTime} onValueChange={(val) => {
+            const court = courts.find(c => c.id === selectedCourtId);
+            const { start, end } = clampHourRange(court, matchDate);
+            const hour = parseInt(val.split(':')[0], 10);
+            if (hour < start || hour >= end) {
+              toast.error('Hora fuera de rango', { description: `Selecciona entre ${String(start).padStart(2,'0')}:00 y ${String(end).padStart(2,'0')}:00.` });
+              return;
+            }
+            if (isPastToday(matchDate, val)) {
+              toast.error('Hora inválida', { description: 'No puedes reservar una hora pasada del día actual.' });
+              return;
+            }
+            setMatchTime(val);
+          }}>
             <SelectTrigger>
               <SelectValue placeholder="Selecciona una hora" />
             </SelectTrigger>
@@ -266,19 +389,28 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
             Número de jugadores
           </label>
           <div className="grid grid-cols-4 gap-2">
-            {[6, 8, 10, 11, 14, 16, 18, 22].map((num) => (
-              <Button
-                key={num}
-                variant="outline"
-                className={`${maxPlayers === num
-                  ? 'aspect-square bg-[#f4b400] text-[#172c44] border-transparent'
-                  : 'aspect-square bg-white/20 text-white border-white/30 hover:bg-white/30'} `}
-                onClick={() => setMaxPlayers(num)}
-              >
-                {num}
-              </Button>
-            ))}
+            {playerOptions.map((num) => {
+              const court = courts.find(c => c.id === selectedCourtId);
+              const cap = getCourtCapacity(court);
+              const disabled = num > cap;
+              return (
+                <Button
+                  key={num}
+                  variant="outline"
+                  className={`${maxPlayers === num
+                    ? 'aspect-square bg-[#f4b400] text-[#172c44] border-transparent'
+                    : 'aspect-square bg-white/20 text-white border-white/30 hover:bg-white/30'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={disabled}
+                  onClick={() => !disabled && setMaxPlayers(num)}
+                >
+                  {num}
+                </Button>
+              );
+            })}
           </div>
+          {selectedCourtId && (
+            <p className="text-white/80 text-xs mt-1">Capacidad máxima permitida: {getCourtCapacity(courts.find(c => c.id === selectedCourtId))} jugadores.</p>
+          )}
         </div>
 
         <div>
@@ -404,6 +536,30 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     }
     if (!selectedSport || !selectedCourtId || !matchDate || !matchTime || !court) {
       setError("Por favor, completa todos los campos requeridos.");
+      return;
+    }
+
+    if (court && isUnavailableDay(court, matchDate)) {
+      setError('La cancha no está disponible en el día seleccionado.');
+      toast.error('Día no disponible', { description: 'Elige un día habilitado según disponibilidad de la cancha.' });
+      return;
+    }
+    const { start, end } = clampHourRange(court, matchDate);
+    const hour = parseInt(matchTime.split(':')[0], 10);
+    if (hour < start || hour >= end) {
+      setError(`La hora debe estar entre ${String(start).padStart(2,'0')}:00 y ${String(end).padStart(2,'0')}:00.`);
+      toast.error('Hora fuera de rango', { description: `Selecciona entre ${String(start).padStart(2,'0')}:00 y ${String(end).padStart(2,'0')}:00.` });
+      return;
+    }
+    if (isPastToday(matchDate, matchTime)) {
+      setError('No puedes reservar una hora pasada del día actual.');
+      toast.error('Hora inválida', { description: 'Elige una hora futura para hoy.' });
+      return;
+    }
+    const cap = getCourtCapacity(court);
+    if (maxPlayers > cap) {
+      setError(`Número de jugadores excede la capacidad (${cap}).`);
+      toast.error('Capacidad excedida', { description: `Selecciona hasta ${cap} jugadores.` });
       return;
     }
 
