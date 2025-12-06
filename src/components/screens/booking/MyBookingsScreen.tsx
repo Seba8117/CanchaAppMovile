@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 // Añadido: ChevronDown para los filtros
-import { Calendar, Clock, DollarSign, Loader2, AlertTriangle, Inbox, Search, Users, Shield, MapPin, LogOut, X, ChevronDown } from 'lucide-react';
+import { Calendar, Clock, DollarSign, Loader2, Inbox, Search, Users, Shield, MapPin, LogOut, X, ChevronDown } from 'lucide-react';
 import { AppHeader } from '../../common/AppHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -102,7 +102,7 @@ export function MyBookingsScreen({ onBack, onNavigate }: MyBookingsScreenProps) 
     }
   };
 
-  // --- FUNCIÓN: SALIR O CANCELAR ACTIVIDAD ---
+  // --- FUNCIÓN: SALIR O CANCELAR ACTIVIDAD (MODIFICADA) ---
   const handleLeaveActivity = async (item: DocumentData) => {
     const currentUser = auth.currentUser;
     if (!currentUser) {
@@ -118,12 +118,30 @@ export function MyBookingsScreen({ onBack, onNavigate }: MyBookingsScreenProps) 
     setLoading(true);
     try {
       if (item.type === 'match') {
-        const matchRef = doc(db, "matches", item.id);
+        const matchId = item.id;
+
+        // 1. Eliminar al jugador de la colección 'matches'
+        const matchRef = doc(db, "matches", matchId);
         await updateDoc(matchRef, {
           players: arrayRemove(currentUser.uid),
           currentPlayers: increment(-1)
         });
-        setMasterList(prev => prev.filter(a => a.id !== item.id));
+
+        // 2. Eliminar al jugador de la colección 'chats' (CRÍTICO)
+        const chatRef = doc(db, "chats", matchId);
+        // Intentamos actualizar el chat. Usamos try/catch anidado por si el chat no existe,
+        // para que no detenga el flujo visual de salida.
+        try {
+            await updateDoc(chatRef, {
+                participantsUids: arrayRemove(currentUser.uid)
+            });
+            console.log("Usuario eliminado del chat exitosamente.");
+        } catch (chatErr) {
+            console.warn("No se pudo actualizar el chat (puede que no exista):", chatErr);
+        }
+
+        // 3. Actualizar la lista local
+        setMasterList(prev => prev.filter(a => a.id !== matchId));
 
       } else if (item.type === 'booking') {
         const bookingRef = doc(db, "bookings", item.id);
@@ -231,7 +249,7 @@ export function MyBookingsScreen({ onBack, onNavigate }: MyBookingsScreenProps) 
           </div>
         </div>
 
-        {/* --- ESTADOS DE CARGA Y VACÍO (Sin cambios) --- */}
+        {/* --- ESTADOS DE CARGA Y VACÍO --- */}
         {loading && <div className="flex justify-center pt-10"><Loader2 className="animate-spin text-white" size={32} /></div>}
         {error && <p className="text-red-200 text-center p-4 bg-red-500/20 rounded-md">{error}</p>}
         {!loading && !error && activities.length === 0 && (
@@ -246,7 +264,7 @@ export function MyBookingsScreen({ onBack, onNavigate }: MyBookingsScreenProps) 
           </div>
         )}
 
-        {/* --- LISTA DE ACTIVIDADES (DISEÑO DE GRID CORREGIDO) --- */}
+        {/* --- LISTA DE ACTIVIDADES --- */}
         {!loading && activities.map((item) => {
           
           // --- TARJETA PARA RESERVA DIRECTA ---
@@ -289,7 +307,7 @@ export function MyBookingsScreen({ onBack, onNavigate }: MyBookingsScreenProps) 
             );
           }
           
-          // --- TARJETA PARA PARTIDO AL QUE SE UNIÓ (DISEÑO DE GRID CORREGIDO) ---
+          // --- TARJETA PARA PARTIDO AL QUE SE UNIÓ ---
           if (item.type === 'match') {
             return (
               <Card 
@@ -305,7 +323,6 @@ export function MyBookingsScreen({ onBack, onNavigate }: MyBookingsScreenProps) 
                   </p>
                 </CardHeader>
                 <CardContent>
-                  {/* --- ESTE ES EL GRID DE 2 COLUMNAS QUE ARREGLA TU DISEÑO --- */}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-gray-700 mt-2">
                     <div className="flex items-center gap-2 col-span-2"><Calendar size={14} className="text-gray-500" /><span>{formatMatchTime(item.date, item.time)}</span></div>
                     <div className="flex items-center gap-2"><Users size={14} className="text-gray-500" /><span>{item.currentPlayers}/{item.maxPlayers} Jugadores</span></div>
