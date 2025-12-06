@@ -20,7 +20,8 @@ import {
   getDoc,
   updateDoc,
   setDoc,
-  getDocs
+  getDocs,
+  increment
 } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -136,6 +137,14 @@ export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
         return hasOtherPeople;
     })
     .sort((a, b) => {
+        // Priorizar chats con mensajes no leídos
+        const unreadA = (currentUser && a.unreadCountMap?.[currentUser.uid]) || 0;
+        const unreadB = (currentUser && b.unreadCountMap?.[currentUser.uid]) || 0;
+        
+        if (unreadA > 0 && unreadB === 0) return -1;
+        if (unreadB > 0 && unreadA === 0) return 1;
+        if (unreadA > 0 && unreadB > 0 && unreadA !== unreadB) return unreadB - unreadA; // El que tenga más no leídos primero
+
         const timeA = a.lastMessageTimestamp?.toMillis ? a.lastMessageTimestamp.toMillis() : (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0);
         const timeB = b.lastMessageTimestamp?.toMillis ? b.lastMessageTimestamp.toMillis() : (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0);
         return timeB - timeA;
@@ -232,6 +241,18 @@ export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
     return () => {}; 
   }, [currentUser]);
 
+  // --- Marcar como leído al entrar ---
+  useEffect(() => {
+    if (selectedChat && currentUser) {
+        const chatRef = doc(db, 'chats', selectedChat.id);
+        // Intentamos actualizar el contador a 0. 
+        // Si el documento no existe (chat virtual sin mensajes), no pasa nada.
+        updateDoc(chatRef, {
+            [`unreadCountMap.${currentUser.uid}`]: 0
+        }).catch(() => {});
+    }
+  }, [selectedChat, currentUser]);
+
   // --- Cargar Detalles Partido ---
   useEffect(() => {
     if (selectedChat && selectedChat.type === 'match') {
@@ -292,6 +313,13 @@ export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
       const chatSnap = await getDoc(chatRef);
       
       if (!chatSnap.exists()) {
+          // Crear mapa inicial de unread counts
+          const initialUnreadMap: any = {};
+          selectedChat.participantsUids.forEach((uid: string) => {
+             if (uid !== currentUser.uid) initialUnreadMap[uid] = 1;
+             else initialUnreadMap[uid] = 0;
+          });
+
           await setDoc(chatRef, {
               id: chatId,
               name: selectedChat.name || 'Chat de Partido',
@@ -300,13 +328,24 @@ export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
               ownerId: selectedChat.ownerId || currentUser.uid, 
               lastMessage: newMessage,
               lastMessageTimestamp: serverTimestamp(),
-              createdAt: serverTimestamp()
+              createdAt: serverTimestamp(),
+              unreadCountMap: initialUnreadMap
           });
       } else {
-          await updateDoc(chatRef, {
+          const updates: any = {
               lastMessage: newMessage,
               lastMessageTimestamp: serverTimestamp(),
+          };
+          // Incrementar contador para otros participantes
+          const currentData = chatSnap.data();
+          const participants = currentData.participantsUids || [];
+          participants.forEach((uid: string) => {
+              if (uid !== currentUser.uid) {
+                  updates[`unreadCountMap.${uid}`] = increment(1);
+              }
           });
+
+          await updateDoc(chatRef, updates);
       }
       await addDoc(collection(db, "chats", chatId, "messages"), {
         text: newMessage,
@@ -321,23 +360,33 @@ export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
   const getInitials = (name: string = '') => name?.split(' ').map(n => n[0]).join('').toUpperCase() || '...';
 
   // --- Card de Chat ---
-  const ChatCard = ({ chat }: { chat: DocumentData }) => (
+  const ChatCard = ({ chat }: { chat: DocumentData }) => {
+    const unreadCount = (currentUser && chat.unreadCountMap?.[currentUser.uid]) || 0;
+    
+    return (
     <Card className="cursor-pointer hover:shadow-lg transition-all border-none bg-white/90 backdrop-blur-sm mb-3" onClick={() => setSelectedChat(chat)}>
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
-          <Avatar className="w-12 h-12">
-            <AvatarFallback className="bg-[#EAB308] text-white font-bold text-lg">
-              {chat.type === 'match' ? '⚽' : '🏆'}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className="w-12 h-12">
+                <AvatarFallback className="bg-[#EAB308] text-white font-bold text-lg">
+                {chat.type === 'match' ? '⚽' : '🏆'}
+                </AvatarFallback>
+            </Avatar>
+            {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-white shadow-sm">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+            )}
+          </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-start mb-1">
-              <h3 className="text-[#172c44] font-bold truncate text-base">{chat.name}</h3>
-              <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
+              <h3 className={`text-[#172c44] truncate text-base ${unreadCount > 0 ? 'font-black' : 'font-bold'}`}>{chat.name}</h3>
+              <span className={`text-xs whitespace-nowrap ml-2 ${unreadCount > 0 ? 'text-[#EAB308] font-bold' : 'text-gray-500'}`}>
                 {toDate(chat.lastMessageTimestamp)?.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) || ''}
               </span>
             </div>
-            <p className={`text-sm truncate ${chat.isVirtual ? 'text-gray-400 italic' : 'text-gray-600'}`}>
+            <p className={`text-sm truncate ${chat.isVirtual ? 'text-gray-400 italic' : (unreadCount > 0 ? 'text-gray-900 font-semibold' : 'text-gray-600')}`}>
                 {chat.lastMessage}
             </p>
           </div>
@@ -345,6 +394,7 @@ export function ChatScreenOwner({ onBack }: ChatScreenOwnerProps) {
       </CardContent>
     </Card>
   );
+  };
 
   // --- VISTA DETALLE DEL CHAT ---
   if (selectedChat) {

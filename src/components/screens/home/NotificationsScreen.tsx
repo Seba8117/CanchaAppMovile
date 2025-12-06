@@ -38,6 +38,7 @@ export function NotificationsScreen({ onBack, onNavigate }: NotificationsScreenP
       case 'team-delete-initiated': return 'bg-orange-100 text-orange-700';
       case 'team-delete-reminder': return 'bg-yellow-100 text-yellow-700';
       case 'team-delete-result': return 'bg-red-100 text-red-700';
+      case 'proximity': return 'bg-indigo-100 text-indigo-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -51,6 +52,7 @@ export function NotificationsScreen({ onBack, onNavigate }: NotificationsScreenP
       case 'team-delete-initiated': return 'Eliminación';
       case 'team-delete-reminder': return 'Recordatorio';
       case 'team-delete-result': return 'Resultado';
+      case 'proximity': return 'Cerca de ti';
       default: return 'General';
     }
   };

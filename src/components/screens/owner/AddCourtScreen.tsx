@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ArrowLeft, MapPin, Clock, Zap } from 'lucide-react';
 import { Button } from '../../ui/button';
@@ -13,7 +13,7 @@ import { AppHeader } from '../../common/AppHeader';
 
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig'; // Asegúrate de que esta ruta sea correcta
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 // --- FIN: Importaciones de Firebase ---
 
 interface AddCourtScreenProps {
@@ -44,6 +44,23 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ownerLocation, setOwnerLocation] = useState<any>(null);
+  const [ownerAddress, setOwnerAddress] = useState('');
+
+  useEffect(() => {
+    const fetchOwner = async () => {
+      if (!auth.currentUser) return;
+      try {
+        const snap = await getDoc(doc(db, 'dueno', auth.currentUser.uid));
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d.location) setOwnerLocation(d.location);
+          if (d.address) setOwnerAddress(d.address);
+        }
+      } catch {}
+    };
+    fetchOwner();
+  }, []);
 
   const availableAmenities = [
     'Vestuarios', 'Duchas', 'Estacionamiento', 'Iluminación LED', 
@@ -137,6 +154,7 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
         pricePerHour: Number(formData.pricePerHour), // Convertir a tipo número
         capacity: Number(formData.capacity) || 0, // Convertir a número o establecer 0 si está vacío
         ownerId: currentUser.uid, // ¡Asocia la cancha al dueño!
+        location: ownerLocation ? { ...ownerLocation, address: ownerAddress } : { address: ownerAddress },
         createdAt: serverTimestamp() // Agrega una marca de tiempo de cuándo fue creada
       };
 
@@ -148,7 +166,7 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
         description: `La cancha "${formData.name}" ya está disponible para ser reservada.`,
       });
 
-      alert('¡Cancha creada exitosamente!');
+      // alert('¡Cancha creada exitosamente!'); // Eliminado para usar toast
 
       onBack(); // Regresar a la pantalla anterior después de crear
 
@@ -223,7 +241,7 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
                       </svg>
                     );
                     if (s.includes('pádel') || s.includes('padel') || s.includes('pade')) return (
-                      <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+                      <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden>
                         <circle cx="9" cy="10" r="6" fill="#cddc39" stroke="#827717" strokeWidth="1.5" />
                         <rect x="14" y="12" width="6" height="2" rx="1" fill="#827717" />
                       </svg>

@@ -28,6 +28,9 @@ interface OwnerDashboardProps {
 
 export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview');
+  
+  // --- ESTADO DE MENSAJES NO LEÍDOS ---
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const [stats, setStats] = useState({
     totalCourts: 0,
@@ -198,50 +201,44 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           })
           .slice(0, 5)
           .map(({ id, data }) => {
-            const dt = (data.date as Timestamp).toDate();
-            const dateStr = dt.toLocaleDateString();
+            let dateStr = 'Fecha N/A';
+            if (data.date?.toDate) dateStr = data.date.toDate().toLocaleDateString();
+            else if (data.date) dateStr = String(data.date).split('T')[0];
             return {
               id,
               courtName: data.courtName || 'Cancha',
-              playerName: data.playerName || 'Jugador',
+              playerName: data.userName || 'Usuario',
               date: dateStr,
-              time: `${data.startTime ?? ''}${data.endTime ? ` - ${data.endTime}` : ''}`,
+              time: data.time || '00:00',
               amount: Number(data.price) || 0,
-              status: data.status || 'confirmed',
+              status: data.status || 'pending'
             };
           });
 
-        // 6) Mapear torneos para la UI
-        const mappedTournaments = tournamentsData.map((t: any) => {
-          const start: string = t.startDate ? new Date(t.startDate).toLocaleDateString() : '-';
-          return {
-            id: t.id,
-            name: t.name || 'Torneo',
-            sport: t.sport || 'futbol',
-            participants: t.registeredTeams ?? 0,
-            startDate: start,
-            prize: Number(t.entryFee || 0) * Number(t.maxTeams || 0), // aproximación de premio si no hay campo
-            status: t.status || 'registration',
-          };
-        });
-
-        setStats(s => ({
-          ...s,
+        setStats({
           totalCourts,
           totalBookings,
           monthlyRevenue,
           revenueDeltaPct,
           activeTournaments,
-          averageRating: s.averageRating,
-        }));
+          averageRating: 4.8, // Placeholder o calculado si tienes reseñas
+        });
         setBookingsToday(bookingsTodayCount);
         setRecentBookings(recent);
-        setTournaments(mappedTournaments);
-        setScreenError(null);
-        setScreenLoading(false);
-      } catch (e) {
-        console.error('Error cargando dashboard del dueño:', e);
-        setScreenError('Error al cargar el dashboard');
+        setTournaments(tournamentsData.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          sport: t.sport,
+          participants: t.registeredCount || 0,
+          startDate: t.startDate?.toDate?.().toLocaleDateString() || String(t.startDate || '').split('T')[0],
+          prize: Number(t.prizePool) || 0,
+          status: t.status
+        })).slice(0, 3));
+
+      } catch (err: any) {
+        console.error("Error loading dashboard:", err);
+        setScreenError(err.message || "Error al cargar datos");
+      } finally {
         setScreenLoading(false);
       }
     };
@@ -249,288 +246,63 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     fetchData();
   }, [monthRanges]);
 
-  // Suscripción en tiempo real al conteo de canchas activas del dueño
+  // --- EFECTO PARA CONTAR MENSAJES NO LEÍDOS ---
   useEffect(() => {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
+
+    // Escuchar cambios en chats donde el dueño participa
+    // Asumiendo que 'chats' tiene un campo 'unreadCounts' o similar, o escuchando mensajes
+    // Aquí implementamos una lógica simplificada: escuchar chats con mensajes no leídos
+    // Una mejor aproximación sería tener un contador global en el perfil del usuario o una colección 'unread_messages'
+    
+    // OPCIÓN 1: Consulta directa si tienes una estructura que lo soporte
+    // const q = query(collection(db, 'chats'), where('participantsUids', 'array-contains', currentUser.uid));
+    
+    // OPCIÓN 2 (Más robusta para tiempo real): Escuchar todos los chats del usuario
     const q = query(
-      collection(db, 'cancha'),
-      where('ownerId', '==', currentUser.uid),
-      where('isActive', '==', true)
+      collection(db, 'chats'), 
+      where('participantsUids', 'array-contains', currentUser.uid)
     );
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setStats((s) => ({ ...s, totalCourts: snap.size }));
-      setScreenLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
 
-  
-
-  // Suscripción en tiempo real: torneos del dueño (registrados y finalizados)
-  useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    const q = query(collection(db, 'torneo'), where('ownerId', '==', currentUser.uid));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const total = snap.size;
-      const completed = snap.docs.filter((d) => (d.data() as any).status === 'finalizado').length;
-      setDashboardTotals((t) => ({ ...t, tournamentsRegistered: total, tournamentsCompleted: completed }));
-      // Mantener coherencia con tarjeta de "Torneos Activos"
-      const activeCount = snap.docs.filter((d) => (d.data() as any).status !== 'finalizado').length;
-      setStats((s) => ({ ...s, activeTournaments: activeCount }));
-      setScreenLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Suscripción en tiempo real: equipos totales del dueño
-  useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    const q = query(collection(db, 'teams'), where('ownerId', '==', currentUser.uid));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setDashboardTotals((t) => ({ ...t, teamsTotal: snap.size }));
-      setScreenLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const [courtsData, setCourtsData] = useState<Array<{
-    id: string | number;
-    name: string;
-    sport: string;
-    surface: string;
-    capacity: number;
-    pricePerHour: number;
-    status: string;
-    bookingsToday: number;
-    rating: number;
-  }>>([]);
-  const [loadingCourts, setLoadingCourts] = useState(false);
-  const [courtsError, setCourtsError] = useState<string | null>(null);
-  const [courtsErrorType, setCourtsErrorType] = useState<string | null>(null);
-  const [visibleCourtsCount, setVisibleCourtsCount] = useState(20);
-
-  // Helpers compartidos para cache y mapeo de estados (disponibles en todos los efectos)
-  const cacheKeyRef = useRef<string>(`courts:${auth.currentUser?.uid || 'anon'}`);
-  const loadFromCache = () => {
-    try {
-      const raw = localStorage.getItem(cacheKeyRef.current);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!parsed || !Array.isArray(parsed.items)) return;
-      setCourtsData(parsed.items);
-    } catch {}
-  };
-  const saveToCache = (items: any) => {
-    try {
-      localStorage.setItem(cacheKeyRef.current, JSON.stringify({ items, ts: Date.now() }));
-    } catch {}
-  };
-  const mapStatus = (s: string) => {
-    if (!s) return 'available';
-    const val = String(s).toLowerCase();
-    if (val === 'active' || val === 'activo') return 'available';
-    if (val === 'occupied' || val === 'ocupada' || val === 'ocupado') return 'occupied';
-    if (val === 'maintenance' || val === 'mantenimiento') return 'maintenance';
-    return s || 'available';
-  };
-  const mapItem = (it: any) => ({
-    id: it.id ?? it._id ?? Math.random(),
-    name: it.name ?? it.nombre ?? 'Cancha',
-    sport: it.sport ?? it.deporte ?? 'Fútbol',
-    surface: it.surface ?? it.superficie ?? 'Césped sintético',
-    capacity: Number(it.capacity ?? it.capacidad ?? 10),
-    pricePerHour: Number(it.pricePerHour ?? it.precioPorHora ?? it.price ?? 0),
-    status: mapStatus(it.status ?? it.estado ?? (it.isActive ?? it.activo ? 'active' : 'maintenance')),
-    bookingsToday: Number(it.bookingsToday ?? it.reservasHoy ?? 0),
-    rating: Number(it.rating ?? it.puntuacion ?? 4.5),
-  });
-  const hasData = (stats.totalCourts > 0) || (stats.totalBookings > 0) || (tournaments.length > 0) || (recentBookings.length > 0);
-
-  const sportSvg = (sport: string) => {
-    const s = (sport || '').toLowerCase();
-    if (s.includes('fut')) {
-      return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
-          <circle cx="12" cy="12" r="10" fill="#FFF" stroke="#172c44" strokeWidth="1.5" />
-          <path d="M12 2l3 4-3 3-3-3 3-4z" fill="#172c44" />
-          <path d="M5 14l3-2 2 3-3 2-2-3z" fill="#172c44" />
-          <path d="M16 12l3 2-2 3-3-2 2-3z" fill="#172c44" />
-        </svg>
-      );
-    }
-    if (s.includes('bás') || s.includes('basq')) {
-      return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
-          <circle cx="12" cy="12" r="10" fill="#ff8f00" stroke="#6d4c41" strokeWidth="1.5" />
-          <path d="M4 12h16M12 4v16M6 6l12 12M6 18L18 6" stroke="#6d4c41" strokeWidth="1.2" fill="none" />
-        </svg>
-      );
-    }
-    if (s.includes('ten')) {
-      return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
-          <circle cx="12" cy="12" r="10" fill="#8bc34a" stroke="#33691e" strokeWidth="1.5" />
-          <path d="M6 8c2.5 2 6.5 2 9 0M6 16c2.5-2 6.5-2 9 0" stroke="#33691e" strokeWidth="1.2" fill="none" />
-        </svg>
-      );
-    }
-    if (s.includes('pádel') || s.includes('padel') || s.includes('pade')) {
-      return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
-          <circle cx="9" cy="10" r="6" fill="#cddc39" stroke="#827717" strokeWidth="1.5" />
-          <rect x="14" y="12" width="6" height="2" rx="1" fill="#827717" />
-        </svg>
-      );
-    }
-    if (s.includes('vól') || s.includes('vole') || s.includes('vol')) {
-      return (
-        <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
-          <circle cx="12" cy="12" r="10" fill="#eceff1" stroke="#37474f" strokeWidth="1.5" />
-          <path d="M4 12c6-5 10-5 16 0M6 6c4 4 8 4 12 0M6 18c4-4 8-4 12 0" stroke="#37474f" strokeWidth="1.2" fill="none" />
-        </svg>
-      );
-    }
-    return (
-      <svg viewBox="0 0 24 24" className="w-5 h-5 text-slate-700" aria-hidden>
-        <circle cx="12" cy="12" r="10" fill="#e0e0e0" stroke="#616161" strokeWidth="1.5" />
-      </svg>
-    );
-  };
-
-  // recentBookings ahora viene de Firestore
-
-  // tournaments ahora viene de Firestore
-
-  useEffect(() => {
-    let polling: any;
-    const lastFetchRef: { current: number } = { current: 0 };
-    const retryRef: { current: number } = { current: 0 };
-    const apiUrlEnv = (import.meta as any).env?.VITE_COURTS_API_URL;
-    const apiUrl = apiUrlEnv ? String(apiUrlEnv) : '';
-    const apiKey = (import.meta as any).env?.VITE_COURTS_API_KEY;
-    const fallbackFromFirestore = async () => {
-      try {
-        const user = auth.currentUser;
-        if (!user) return;
-        const q = query(collection(db, 'cancha'), where('ownerId', '==', user.uid), where('isActive', '==', true));
-        const snap = await getDocs(q);
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const mapped = items.map(mapItem);
-        setCourtsData(mapped);
-        saveToCache(mapped);
-        setVisibleCourtsCount((c) => Math.min(mapped.length, 20));
-      } catch (err) {
-        console.error('Firestore fallback error', err);
-      }
-    };
-    const refresh = async (manual = false) => {
-      if (!navigator.onLine) {
-        setCourtsError('Sin conexión a internet');
-        setCourtsErrorType('offline');
-        return;
-      }
-      if (!apiUrl) {
-        await fallbackFromFirestore();
-        setLoadingCourts(false);
-        return;
-      }
-      const now = Date.now();
-      if (now - lastFetchRef.current < 1000 && !manual) return;
-      lastFetchRef.current = now;
-      setLoadingCourts(true);
-      setCourtsError(null);
-      setCourtsErrorType(null);
-      try {
-        const user = auth.currentUser;
-        const token = await user?.getIdToken?.();
-        const ownerId = auth.currentUser?.uid;
-        const url = ownerId ? `${apiUrl}?ownerId=${encodeURIComponent(ownerId)}` : apiUrl;
-        const headers: Record<string, string> = {};
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        if (apiKey) headers['X-API-Key'] = String(apiKey);
-        const res = await fetch(url, { headers });
-        if (res.status === 401) {
-          setCourtsError('Sesión expirada');
-          setCourtsErrorType('expired');
-          throw new Error('Unauthorized');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let count = 0;
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        // Verificar si hay mensajes no leídos para este usuario
+        // Esto depende de cómo guardes el estado de lectura. 
+        // Ejemplo: data.unreadCountMap?.[currentUser.uid] > 0
+        if (data.unreadCountMap && typeof data.unreadCountMap[currentUser.uid] === 'number') {
+          count += data.unreadCountMap[currentUser.uid];
+        } else {
+          // Fallback o lógica alternativa si no existe el mapa
+          // Por ejemplo, si lastMessageSenderId !== currentUser.uid y !data.readBy?.includes(currentUser.uid)
+          // Para simplificar, dejaremos 0 si no está implementado el mapa
         }
-        if (!res.ok) {
-          setCourtsError('Error del servidor');
-          setCourtsErrorType('server');
-          throw new Error(`Server error ${res.status}`);
-        }
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : Array.isArray(data?.canchas) ? data.canchas : null;
-        if (!list) {
-          setCourtsError('Datos corruptos');
-          setCourtsErrorType('corrupt');
-          throw new Error('Invalid data');
-        }
-        const filtered = list.filter((x: any) => {
-          const st = (x.status ?? x.estado ?? '').toLowerCase();
-          const activeFlag = Boolean(x.isActive ?? x.activo);
-          return st === 'active' || st === 'activo' || activeFlag;
-        });
-        const mapped = filtered.map(mapItem);
-        setCourtsData(mapped);
-        saveToCache(mapped);
-        retryRef.current = 0;
-        setVisibleCourtsCount((c) => Math.min(mapped.length, 20));
-        const schedule = () => {
-          const grow = () => setVisibleCourtsCount((c) => (c < mapped.length ? Math.min(mapped.length, c + 20) : c));
-          if ((window as any).requestIdleCallback) (window as any).requestIdleCallback(grow);
-          else setTimeout(grow, 300);
-        };
-        schedule();
-      } catch (e) {
-        console.error('Courts API error', { type: courtsErrorType, error: e });
-        // Fallback inmediato a Firestore para no ocultar canchas activas
-        fallbackFromFirestore();
-        retryRef.current = Math.min(retryRef.current + 1, 5);
-        const delay = Math.min(30000, 2000 * Math.pow(2, retryRef.current));
-        setTimeout(() => refresh(true), delay);
-      } finally {
-        setLoadingCourts(false);
-      }
-    };
-    loadFromCache();
-    refresh(true);
-    const onManual = () => refresh(true);
-    window.addEventListener('manual-refresh', onManual);
-    if (apiUrl) {
-      polling = setInterval(() => refresh(false), 15000);
-    }
-    return () => {
-      if (polling) clearInterval(polling);
-      window.removeEventListener('manual-refresh', onManual);
-    };
-  }, []);
-
-  // Suscripción en tiempo real a canchas activas desde Firestore como respaldo
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    const user = auth.currentUser;
-    if (!user) return;
-    if (courtsData.length > 0) return; // Si ya hay datos desde API, no duplicar
-    try {
-      const q = query(collection(db, 'cancha'), where('ownerId', '==', user.uid), where('isActive', '==', true));
-      unsubscribe = onSnapshot(q, (snap) => {
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const mapped = items.map(mapItem);
-        setCourtsData(mapped);
-        saveToCache(mapped);
-        setVisibleCourtsCount((c) => Math.min(mapped.length, 20));
       });
-    } catch (e) {
-      console.error('Realtime courts subscription error', e);
-    }
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [courtsData.length]);
+      setUnreadMessages(count);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  if (screenLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 to-purple-900">
+        <p className="text-white mt-4 font-['Outfit']">Cargando Dashboard...</p>
+      </div>
+    );
+  }
+
+  if (screenError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
+        <AlertTriangle className="h-12 w-12 text-red-500 mb-2" />
+        <p className="text-red-600 text-center font-bold">{screenError}</p>
+        <Button className="mt-4" onClick={() => window.location.reload()}>Reintentar</Button>
+      </div>
+    );
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -563,64 +335,53 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f4b400] via-[#ffd54f] to-[#ffeb3b] pb-20 relative overflow-hidden">
-      {/* Background decorative elements */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#172c44]/15 via-transparent to-[#00a884]/10"></div>
-      <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-bl from-[#172c44]/20 to-transparent rounded-full blur-3xl"></div>
-      <div className="absolute bottom-1/3 left-0 w-64 h-64 bg-gradient-to-tr from-[#00a884]/25 to-transparent rounded-full blur-3xl"></div>
-      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-[#f4b400]/20 to-[#ffd54f]/15 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-0 right-1/4 w-48 h-48 bg-gradient-to-tl from-[#172c44]/15 to-transparent rounded-full blur-2xl"></div>
-      
-      {/* Patrón de puntos dorados */}
-      <div className="absolute inset-0 opacity-15">
-        <div className="absolute top-20 left-10 w-2 h-2 bg-[#172c44] rounded-full animate-pulse"></div>
-        <div className="absolute top-40 right-16 w-1 h-1 bg-white rounded-full animate-pulse animation-delay-1000"></div>
-        <div className="absolute bottom-32 left-20 w-1.5 h-1.5 bg-[#172c44] rounded-full animate-pulse animation-delay-2000"></div>
-        <div className="absolute bottom-20 right-8 w-1 h-1 bg-[#00a884] rounded-full animate-pulse animation-delay-500"></div>
-        <div className="absolute top-60 left-1/2 w-1 h-1 bg-white rounded-full animate-pulse animation-delay-1500"></div>
-      </div>
-      
+    <div className="min-h-screen bg-gray-50 pb-20 font-['Outfit']">
       <AppHeader 
-        title="⚡ Dashboard" 
+        title="Panel de Control" 
         showLogo={true}
-        titleClassName="font-['Outfit'] font-black text-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-orange-500 bg-clip-text text-transparent"
+        leftContent={
+          <img src={logoIcon} alt="Logo" className="w-8 h-8" />
+        }
         rightContent={
           <div className="flex items-center gap-2">
-            
-            {/* --- BOTÓN DE CHAT AÑADIDO --- */}
+            {/* 2. BOTÓN DE CHAT CON BADGE */}
             <Button 
-              variant="outline" 
               size="sm" 
-              className="text-cyan-600 border-cyan-200 bg-white/80 backdrop-blur-sm hover:bg-cyan-50 shadow-lg"
+              variant="ghost" 
+              className="text-[#172c44] relative"
               onClick={() => onNavigate('owner-chat')}
             >
-              <MessageSquare size={20} />
+              <MessageSquare size={22} />
+              {unreadMessages > 0 && (
+                <span className="absolute top-0 right-0 -mt-1 -mr-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm animate-pulse">
+                  {unreadMessages > 9 ? '9+' : unreadMessages}
+                </span>
+              )}
             </Button>
-            {/* --- FIN DEL BOTÓN DE CHAT --- */}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="text-indigo-600 border-indigo-200 bg-white/80 backdrop-blur-sm hover:bg-indigo-50 shadow-lg"
-                >
-                  <MoreVertical size={20} />
+                <Button variant="ghost" size="icon" className="text-[#172c44]">
+                  <MoreVertical size={22} />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="backdrop-blur-sm bg-white/95">
-                <DropdownMenuItem onClick={() => onNavigate('report-team')}>
-                  <AlertTriangle size={18} className="mr-2" />
-                  Reportar Equipo
+              <DropdownMenuContent align="end" className="w-56 rounded-xl shadow-xl border-0 bg-white/95 backdrop-blur-md">
+                <DropdownMenuItem className="focus:bg-indigo-50 cursor-pointer" onClick={() => onNavigate('owner-profile')}>
+                  <Building className="mr-2 h-4 w-4 text-indigo-600" />
+                  <span>Mi Perfil de Negocio</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onNavigate('owner-settings')}>
-                  <Settings size={18} className="mr-2" />
-                  Configuración
+                <DropdownMenuItem className="focus:bg-indigo-50 cursor-pointer" onClick={() => onNavigate('owner-courts')}>
+                  <Settings className="mr-2 h-4 w-4 text-indigo-600" />
+                  <span>Administrar Canchas</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   className="text-red-600 focus:text-red-600"
-                  onClick={() => onLogout?.()}
+                  onClick={() => {
+                    if (window.confirm('¿Estás seguro que quieres cerrar tu sesión empresarial?')) {
+                      onLogout?.();
+                    }
+                  }}
                 >
                   <LogOut size={18} className="mr-2" />
                   Cerrar Sesión
@@ -632,16 +393,6 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
       />
 
       <div className="px-4 py-6 relative z-10">
-        {screenLoading && (
-          <div className="mb-4 bg-white/80 backdrop-blur-sm rounded-2xl p-4 text-center shadow">
-            <p className="font-['Outfit'] font-semibold text-sm text-slate-700">Cargando Dashboard...</p>
-          </div>
-        )}
-        {screenError && !hasData && (
-          <div className="mb-4 bg-rose-100 text-rose-700 rounded-2xl p-4 text-center font-['Outfit'] font-semibold">
-            {screenError}
-          </div>
-        )}
         {/* Dynamic Sports Stats */}
         <div className="grid grid-cols-2 gap-4 mb-8">
           {/* Canchas Card */}
@@ -652,62 +403,40 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <Building size={22} className="text-white" />
+                    <Building size={24} className="text-white" />
                   </div>
-                  <div className="text-right">
-                    <p className="font-['Outfit'] font-black text-3xl text-white leading-none">{stats.totalCourts}</p>
-                  </div>
+                  <Badge className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm">Activo</Badge>
                 </div>
-                <p className="font-['Outfit'] font-semibold text-sm text-indigo-100">🏟️ Canchas Activas</p>
+                <div className="mt-4">
+                  <p className="font-['Outfit'] font-black text-4xl text-white leading-none">{stats.totalCourts}</p>
+                  <p className="font-['Outfit'] font-semibold text-sm text-indigo-100 mt-1">Canchas Activas</p>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Reservas Card */}
-          <Card className="bg-gradient-to-br from-emerald-500 via-green-600 to-teal-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
+          {/* Ingresos Card */}
+          <Card className="bg-gradient-to-br from-emerald-500 via-teal-600 to-green-700 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
             <CardContent className="p-5 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-10 translate-x-10"></div>
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <Calendar size={22} className="text-white" />
+                    <TrendingUp size={24} className="text-white" />
                   </div>
-                  <div className="text-right">
-                    <p className="font-['Outfit'] font-black text-3xl text-white leading-none">{stats.totalBookings}</p>
-                  </div>
+                  <Badge className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm">
+                    {stats.revenueDeltaPct > 0 ? '+' : ''}{stats.revenueDeltaPct}%
+                  </Badge>
                 </div>
-                <p className="font-['Outfit'] font-semibold text-sm text-emerald-100">⚡ Reservas del Mes</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Ingresos Card - Wide */}
-          <Card className="bg-gradient-to-br from-orange-500 via-amber-600 to-yellow-600 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2">
-            <CardContent className="p-5 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
-              <div className="absolute bottom-0 left-1/3 w-20 h-20 bg-white/5 rounded-full translate-y-10"></div>
-              <div className="relative z-10">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                      <TrendingUp size={26} className="text-white" />
-                    </div>
-                    <div>
-                    <p className="font-['Outfit'] font-black text-4xl text-white leading-none">${(stats.monthlyRevenue / 1000).toFixed(0)}k</p>
-                      <p className="font-['Outfit'] font-semibold text-sm text-orange-100 mt-1">💰 Ingresos Mensuales</p>
-                    </div>
-                  </div>
-                  <div className="text-right text-white/80">
-                    <p className="font-['Outfit'] font-medium text-xs">{stats.revenueDeltaPct >= 0 ? `+${stats.revenueDeltaPct}%` : `${stats.revenueDeltaPct}%`} vs mes anterior</p>
-                  </div>
+                <div className="mt-4">
+                  <p className="font-['Outfit'] font-black text-3xl text-white leading-none">
+                    ${(stats.monthlyRevenue / 1000).toFixed(0)}k
+                  </p>
+                  <p className="font-['Outfit'] font-semibold text-sm text-emerald-100 mt-1">Ingresos Mensuales</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-
-          {/* Tarjeta de chats removida para simplificar la interfaz */}
-
-          {/* Tarjeta de torneos removida para simplificar la interfaz */}
 
           {/* Rating Card - Wide to match Ingresos */}
           <Card className="bg-gradient-to-br from-orange-500 via-amber-600 to-yellow-600 border-0 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl col-span-2">
@@ -734,71 +463,55 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           </Card>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 bg-white/70 backdrop-blur-md rounded-2xl p-1.5 shadow-lg border border-white/20">
+        {/* Main Content Tabs */}
+        <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
+          <TabsList className="bg-white p-1 rounded-xl shadow-sm border border-gray-100 grid w-full grid-cols-2 h-auto">
             <TabsTrigger 
-              value="overview" 
-              className="rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg text-slate-600 font-['Outfit'] font-semibold text-sm transition-all duration-300 data-[state=active]:scale-105"
+              value="overview"
+              className="rounded-lg data-[state=active]:bg-[#172c44] data-[state=active]:text-white font-['Outfit'] font-bold py-2.5 transition-all duration-300"
             >
-              📊 Overview
+              Resumen
             </TabsTrigger>
             <TabsTrigger 
-              value="courts" 
-              className="rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-lg text-slate-600 font-['Outfit'] font-semibold text-sm transition-all duration-300 data-[state=active]:scale-105"
+              value="tournaments"
+              className="rounded-lg data-[state=active]:bg-[#172c44] data-[state=active]:text-white font-['Outfit'] font-bold py-2.5 transition-all duration-300"
             >
-              🏟️ Canchas
+              Torneos
             </TabsTrigger>
-            {/* Trigger de Torneos removido */}
           </TabsList>
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">⚡ Actividad Reciente</h2>
-                <p className="font-['Outfit'] font-medium text-sm text-slate-500 mt-1">Últimas reservas y movimientos</p>
-              </div>
-              <button className="font-['Outfit'] font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent hover:from-indigo-700 hover:to-purple-700 transition-all duration-200">
-                Ver Todas →
-              </button>
+          <TabsContent value="overview" className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+            {/* Recent Bookings */}
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-['Outfit'] font-black text-xl text-[#172c44]">Reservas Recientes</h2>
+              <Button variant="link" className="text-[#00a884] font-bold" onClick={() => onNavigate('bookings')}>Ver Todo</Button>
             </div>
-
-            <div className="space-y-4">
-              {recentBookings.map((booking, index) => (
-                <Card key={booking.id} className="bg-white/80 backdrop-blur-sm shadow-xl hover:shadow-2xl border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden">
-                  <CardContent className="p-5 relative">
-                    <div className={`absolute top-0 inset-x-0 h-1.5 ${
-                      booking.status === 'confirmed' ? 'bg-gradient-to-r from-emerald-500 to-teal-500' :
-                      booking.status === 'pending' ? 'bg-gradient-to-r from-orange-500 to-amber-500' :
-                      'bg-gradient-to-r from-indigo-500 to-purple-500'
-                    }`}></div>
-                    
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            booking.status === 'confirmed' ? 'bg-emerald-400' :
-                            booking.status === 'pending' ? 'bg-orange-400' :
-                            'bg-indigo-400'
-                          } animate-pulse`}></div>
-                          <h3 className="font-['Outfit'] font-bold text-lg text-slate-800">{booking.courtName}</h3>
+            
+            <div className="space-y-3">
+              {recentBookings.length === 0 ? (
+                <div className="text-center py-8 bg-white rounded-xl border border-dashed border-gray-300">
+                  <p className="text-gray-500">No hay reservas recientes</p>
+                </div>
+              ) : recentBookings.map((booking) => (
+                <Card key={booking.id} className="border-0 shadow-sm hover:shadow-md transition-shadow bg-white overflow-hidden group">
+                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#00a884] group-hover:w-2 transition-all"></div>
+                  <CardContent className="p-4 pl-6">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold">
+                          {booking.playerName.substring(0,2).toUpperCase()}
                         </div>
-                        <div className="ml-6">
-                          <p className="font-['Outfit'] font-semibold text-base text-slate-700 mb-1">👤 {booking.playerName}</p>
-                          <div className="flex items-center gap-4 font-['Outfit'] font-medium text-sm text-slate-500">
-                            <span className="flex items-center gap-1">📅 {booking.date}</span>
-                            <span className="flex items-center gap-1">⏰ {booking.time}</span>
+                        <div>
+                          <h3 className="font-['Outfit'] font-bold text-[#172c44]">{booking.playerName}</h3>
+                          <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                            <Clock size={12} />
+                            <span>{booking.time} • {booking.courtName}</span>
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                          {formatCLP(booking.amount)}
-                        </p>
-                        <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">CLP</p>
-                        
-                        {/* Estado de la reserva */}
-                        <div className="mt-2">
+                        <p className="font-['Outfit'] font-bold text-[#172c44]">{formatCLP(booking.amount)}</p>
+                        <div className="mt-1">
                           <Badge className={`text-xs font-['Outfit'] font-semibold px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
                             {getStatusText(booking.status)}
                           </Badge>
@@ -827,45 +540,75 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             </div>
           </TabsContent>
 
-          {/* Courts Tab */}
-          <TabsContent value="courts" className="space-y-6">
-            <div className="flex flex-col items-center text-center mb-6">
-              <h2 className="font-['Outfit'] font-black text-2xl bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent">🏟️ Centro Deportivo</h2>
-              <p className="font-['Outfit'] font-medium text-sm text-slate-500 mt-1">Gestiona tus instalaciones</p>
-              <div className="mt-4 flex gap-3 flex-wrap justify-center">
-                <Button 
-                  size="sm" 
-                  className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-['Outfit'] font-bold shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl px-6"
-                  onClick={() => onNavigate('add-court')}
-                >
-                  <Plus size={20} className="mr-2" />
-                  Nueva Cancha
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-['Outfit'] font-bold shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl px-6"
-                  onClick={() => {
-                    const ev = new Event('manual-refresh');
-                    window.dispatchEvent(ev);
-                  }}
-                >
-                  Actualizar
-                </Button>
-              </div>
+          <TabsContent value="tournaments" className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <Button 
+                className="h-auto py-4 bg-gradient-to-br from-[#172c44] to-[#2a4059] hover:shadow-lg transition-all"
+                onClick={() => onNavigate('create-tournament')}
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <div className="p-2 bg-white/10 rounded-full">
+                    <Trophy size={20} className="text-[#f4b400]" />
+                  </div>
+                  <span className="font-['Outfit'] font-bold text-sm">Crear Torneo</span>
+                </div>
+              </Button>
+              <Button 
+                className="h-auto py-4 bg-white border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#00a884] hover:text-[#00a884] transition-all"
+                onClick={() => onNavigate('owner-courts')}
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <div className="p-2 bg-gray-100 rounded-full">
+                    <Plus size={20} />
+                  </div>
+                  <span className="font-['Outfit'] font-bold text-sm">Nueva Cancha</span>
+                </div>
+              </Button>
             </div>
 
-            {loadingCourts && courtsData.length === 0 && (
+            <h3 className="font-['Outfit'] font-black text-xl text-[#172c44] mb-4">Torneos Activos</h3>
+            
+            {tournaments.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-200">
+                <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500 font-medium">No hay torneos activos</p>
+                <Button variant="link" className="text-[#00a884] font-bold mt-2" onClick={() => onNavigate('create-tournament')}>
+                  Crear el primero
+                </Button>
+              </div>
+            ) : (
               <div className="space-y-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Card key={i} className="bg-white/60 backdrop-blur-sm border-0 rounded-2xl shadow-xl">
-                    <CardContent className="p-5 relative">
-                      <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-200 to-indigo-200"></div>
-                      <div className="animate-pulse">
-                        <div className="h-4 bg-slate-200 rounded w-1/3 mb-4"></div>
-                        <div className="space-y-2">
-                          <div className="h-3 bg-slate-200 rounded w-1/2"></div>
-                          <div className="h-3 bg-slate-200 rounded w-1/4"></div>
+                {tournaments.map((tournament) => (
+                  <Card 
+                    key={tournament.id} 
+                    className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-all cursor-pointer group"
+                    onClick={() => onNavigate('tournament-management', tournament)}
+                  >
+                    <div className="h-2 bg-gradient-to-r from-[#f4b400] to-[#ff6f00]"></div>
+                    <CardContent className="p-5">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="font-['Outfit'] font-black text-lg text-[#172c44] group-hover:text-[#00a884] transition-colors">
+                            {tournament.name}
+                          </h3>
+                          <Badge variant="secondary" className="mt-2 bg-indigo-50 text-indigo-700 border-indigo-100">
+                            {tournament.sport}
+                          </Badge>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Premio</span>
+                          <p className="font-['Outfit'] font-black text-xl text-[#00a884]">{formatCLP(tournament.prize)}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Users size={16} className="text-gray-400" />
+                          <span className="font-medium">{tournament.participants} Equipos</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Calendar size={16} className="text-gray-400" />
+                          <span className="font-medium">{tournament.startDate}</span>
                         </div>
                       </div>
                     </CardContent>
@@ -873,127 +616,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
                 ))}
               </div>
             )}
-
-            {courtsError && (
-              <div className="bg-orange-100 text-orange-700 rounded-2xl p-4 text-center font-['Outfit'] font-semibold">
-                {courtsError}
-              </div>
-            )}
-
-            {!loadingCourts && courtsData.length === 0 && !courtsError && (
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-indigo-700">0</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-indigo-600 mt-1">No existen canchas activas</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              {courtsData.slice(0, visibleCourtsCount).map((court, index) => (
-                <Card key={court.id} className={`bg-white/80 backdrop-blur-sm border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden ${
-                  court.sport === 'Fútbol' ? 'shadow-emerald-200/50 hover:shadow-emerald-300/60' :
-                  court.sport === 'Básquetball' ? 'shadow-orange-200/50 hover:shadow-orange-300/60' :
-                  'shadow-blue-200/50 hover:shadow-blue-300/60'
-                } shadow-xl hover:shadow-2xl`}>
-                  <CardContent className="p-5 relative">
-                    {/* Línea de color superior como en overview */}
-                    <div className={`absolute top-0 inset-x-0 h-1.5 ${
-                      court.sport === 'Fútbol' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
-                      court.sport === 'Básquetball' ? 'bg-gradient-to-r from-orange-500 to-red-500' :
-                      'bg-gradient-to-r from-blue-500 to-indigo-500'
-                    }`}></div>
-                    
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            court.sport === 'Fútbol' ? 'bg-emerald-400' :
-                            court.sport === 'Básquetball' ? 'bg-orange-400' :
-                            'bg-blue-400'
-                          } animate-pulse`}></div>
-                          <h3 className="font-['Outfit'] font-bold text-lg text-slate-800">{court.name}</h3>
-                        </div>
-                        
-                        <div className="ml-6">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="flex items-center gap-2">
-                              {sportSvg(court.sport)}
-                              <p className="font-['Outfit'] font-semibold text-base text-slate-700">
-                                {court.sport}
-                              </p>
-                            </div>
-                            <span className="text-slate-400">•</span>
-                            <p className="font-['Outfit'] font-medium text-sm text-slate-600">{court.surface}</p>
-                          </div>
-                          <div className="flex items-center gap-3 font-['Outfit'] font-medium text-sm text-slate-500">
-                            <span className="flex items-center gap-1">
-                              <Users size={14} />
-                              {court.capacity} jugadores
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <p className="font-['Outfit'] font-black text-xl bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                          {formatCLP(court.pricePerHour)}
-                        </p>
-                        <p className="font-['Outfit'] font-medium text-xs text-slate-400 mt-1">CLP</p>
-                        
-                        {/* Estado de la cancha */}
-                        <div className="mt-2">
-                          <Badge className={`text-xs font-['Outfit'] font-semibold px-2 py-1 rounded-full ${getStatusColor(court.status)}`}>
-                            {getStatusText(court.status)}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Información adicional */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 space-y-3">
-                      {/* Estado y reservas */}
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          court.status === 'available' ? 'bg-emerald-400 animate-pulse' :
-                          court.status === 'occupied' ? 'bg-red-400 animate-pulse' :
-                          'bg-yellow-400 animate-pulse'
-                        }`}></div>
-                        <span className="font-['Outfit'] font-semibold text-sm text-slate-600">
-                          {court.status === 'available' ? 'Disponible ahora' :
-                           court.status === 'occupied' ? 'En uso' :
-                           'Mantenimiento'}
-                        </span>
-                        <span className="text-slate-400">•</span>
-                        <span className="font-['Outfit'] font-medium text-sm text-slate-500">
-                          {court.bookingsToday} reservas hoy
-                        </span>
-                      </div>
-                      
-                      {/* Botones */}
-                      <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-['Outfit'] font-semibold rounded-xl px-4 py-2 text-xs h-8 flex-1"
-                          onClick={() => onNavigate('edit-court', court)}
-                        >
-                          Editar
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="border-blue-200 text-blue-700 hover:bg-blue-50 font-['Outfit'] font-semibold rounded-xl px-4 py-2 text-xs h-8 flex-1"
-                        >
-                          Horarios
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
           </TabsContent>
-
-          {/* Sección de torneos removida */}
         </Tabs>
       </div>
     </div>

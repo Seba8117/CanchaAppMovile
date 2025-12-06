@@ -19,7 +19,8 @@ import {
   orderBy,
   doc,
   getDoc,
-  updateDoc
+  updateDoc,
+  increment
 } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -271,7 +272,16 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
   // --- Cargar detalles adicionales (Solo para Partidos) ---
   useEffect(() => {
     const fetchMatchDetails = async () => {
-      if (selectedChat && selectedChat.type === 'match') {
+      if (selectedChat) {
+         // Marcar como leído
+         if (currentUser) {
+             const chatRef = doc(db, 'chats', selectedChat.id);
+             updateDoc(chatRef, {
+                 [`unreadCountMap.${currentUser.uid}`]: 0
+             }).catch(() => {});
+         }
+
+         if (selectedChat.type === 'match') {
         try {
           const matchRef = doc(db, 'matches', selectedChat.id);
           const matchSnap = await getDoc(matchRef);
@@ -291,6 +301,7 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
         }
       } else {
         setMatchInfo(null);
+      }
       }
     };
 
@@ -342,10 +353,21 @@ export function ChatScreen({ onBack }: ChatScreenProps) {
       });
 
       const chatRef = doc(db, "chats", selectedChat.id);
-      await updateDoc(chatRef, {
+      
+      const updates: any = {
         lastMessage: newMessage,
         lastMessageTimestamp: serverTimestamp(),
+      };
+
+      // Incrementar contador para otros participantes
+      const participants = selectedChat.participantsUids || [];
+      participants.forEach((uid: string) => {
+          if (uid !== currentUser.uid) {
+              updates[`unreadCountMap.${uid}`] = increment(1);
+          }
       });
+
+      await updateDoc(chatRef, updates);
       
       setNewMessage('');
     } catch (err) {

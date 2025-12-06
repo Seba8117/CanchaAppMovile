@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Camera, Moon, Sun, Save, User, MapPin, Phone, Mail, Building2, Hash, Clock, Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Camera, Moon, Sun, Save, User, MapPin, Phone, Mail, Building2, Hash, Clock, Loader2, AlertTriangle, ArrowLeft, Crosshair } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Input } from '../../ui/input';
@@ -24,6 +24,7 @@ interface EditOwnerProfileScreenProps {
 export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) {
   const [darkMode, setDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const [profileImage, setProfileImage] = useState<string | null>(null); // Visual por ahora
+  const [location, setLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [formData, setFormData] = useState<DocumentData>({
     // Estado inicial vacío, se llenará desde Firebase
     ownerName: '',
@@ -85,6 +86,7 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
             closeTime: data.closeTime || '23:00',
             // Cargar arrays si existen en Firestore (ej: data.amenities || [])
           });
+          if (data.location) setLocation(data.location);
           // Cargar imagen si existe la URL en Firestore
           // setProfileImage(data.logoUrl || null);
         } else {
@@ -123,6 +125,33 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
     document.documentElement.classList.toggle('dark', enabled);
   };
 
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Tu navegador no soporta geolocalización.");
+      return;
+    }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude, longitude } = pos.coords;
+      setLocation({ lat: latitude, lng: longitude });
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        const data = await res.json();
+        if (data && data.display_name) {
+          handleInputChange('address', data.display_name);
+        }
+      } catch (e) {
+        console.error("Error geocoding", e);
+      } finally {
+        setLoading(false);
+      }
+    }, (err) => {
+      console.error(err);
+      toast.error("No se pudo obtener la ubicación.");
+      setLoading(false);
+    });
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -143,6 +172,7 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
         businessName: formData.businessName,
         rut: formData.rut,
         address: formData.address,
+        location: location || null,
         businessPhone: formData.businessPhone, // Teléfono del negocio
         description: formData.description,
         website: formData.website,
@@ -278,9 +308,14 @@ export function EditOwnerProfileScreen({ onBack }: EditOwnerProfileScreenProps) 
             </div>
             <div>
               <Label htmlFor="businessAddress" className="dark:text-gray-200">Dirección</Label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 text-gray-400" size={16} />
-                <Textarea id="businessAddress" value={formData.address} onChange={(e) => handleInputChange('address', e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-white" rows={2}/>
+              <div className="space-y-2">
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-3 text-gray-400" size={16} />
+                  <Textarea id="businessAddress" value={formData.address} onChange={(e) => handleInputChange('address', e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-white" rows={2}/>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={handleGetCurrentLocation} className="w-full text-[#00a884] border-[#00a884] hover:bg-[#00a884]/10">
+                  <Crosshair size={16} className="mr-2" /> Usar mi ubicación actual
+                </Button>
               </div>
             </div>
             <div>

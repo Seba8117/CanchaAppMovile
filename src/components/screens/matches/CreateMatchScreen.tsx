@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, MapPin, Calendar, Clock, Users, DollarSign, Crown, Shield } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Users, DollarSign, Crown, Shield, Loader2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -11,7 +11,7 @@ import { AppHeader } from '../../common/AppHeader';
 import { createMatch, getAllCourts } from '../../../services/matchService';
 import { auth, db } from '../../../Firebase/firebaseConfig';
 import { startMatchCheckout } from '../../../services/paymentService';
-import { DocumentData, collection, query, where, getDocs, Timestamp, doc, setDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { DocumentData, collection, query, where, getDocs, Timestamp, doc, setDoc, addDoc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 
 interface CreateMatchScreenProps {
   onBack: () => void;
@@ -91,8 +91,6 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     padel: ['padel', 'padel '],
     futsal: ['futsal']
   };
-
-  
 
   const compatibleTeams = myTeams.filter(team => (team.sport?.toLowerCase?.() || '') === selectedSport);
   const selectedTeam = compatibleTeams.length > 0 ? compatibleTeams[0] : null;
@@ -176,12 +174,11 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     }
   }, [selectedCourtId, courts]);
 
-  // Efecto para calcular el precio por jugador automáticamente
   useEffect(() => {
     const court = courts.find(c => c.id === selectedCourtId);
     if (court && court.pricePerHour > 0 && maxPlayers > 0 && matchDuration > 0) {
       const totalCost = court.pricePerHour * matchDuration;
-      const calculatedPrice = Math.ceil(totalCost / maxPlayers); // Redondea hacia arriba para asegurar el costo total
+      const calculatedPrice = Math.ceil(totalCost / maxPlayers);
       setPricePerPlayer(calculatedPrice);
     }
   }, [maxPlayers, selectedCourtId, matchDuration, courts]);
@@ -357,12 +354,14 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
             }
             setMatchTime(val);
           }}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Selecciona una hora" />
             </SelectTrigger>
             <SelectContent>
               {getAvailableTimeSlots().map((time) => (
-                <SelectItem key={time} value={time}>{time}</SelectItem>
+                <SelectItem key={time} value={time}>
+                  {time}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -372,14 +371,16 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           <label className="block text-sm text-white mb-2">
             Duración (horas)
           </label>
-          <Select value={String(matchDuration)} onValueChange={(val) => setMatchDuration(Number(val))}>
-            <SelectTrigger>
-              <SelectValue placeholder="Duración" />
+          <Select value={String(matchDuration)} onValueChange={(v) => setMatchDuration(Number(v))}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Selecciona duración" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="1">1 hora</SelectItem>
-              <SelectItem value="1.5">1.5 horas</SelectItem>
-              <SelectItem value="2">2 horas</SelectItem>
+              {[1, 1.5, 2, 2.5, 3].map((hours) => (
+                <SelectItem key={hours} value={String(hours)}>
+                  {hours} hora{hours > 1 ? 's' : ''}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -418,93 +419,45 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
             Costo por jugador
           </label>
           <div className="relative">
-            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-            <Input 
-              type="number" 
-              placeholder="Costo calculado"
+            <DollarSign className="absolute left-3 top-3 text-gray-400" size={16} />
+            <Input
+              type="number"
+              className="pl-10"
               value={pricePerPlayer}
-              readOnly
-              className="pl-10 bg-white/10 border-white/30 focus:ring-0"
+              onChange={(e) => setPricePerPlayer(Number(e.target.value))}
             />
           </div>
+          <p className="text-xs text-gray-400 mt-1">
+            Costo total de la cancha: ${(courts.find(c => c.id === selectedCourtId)?.pricePerHour || 0) * matchDuration}
+          </p>
         </div>
-
-        {/* Team inclusion option */}
-        {selectedTeam && (
-          <div className="border border-[rgba(23,44,68,0.1)] rounded-lg p-4 bg-[#f8f9fa]">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                <Crown className="h-5 w-5 text-[#f4b400]" />
-                <label className="text-[#172c44] cursor-pointer">
-                  Incluir mi equipo oficial
-                </label>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeMyTeam}
-                  onChange={(e) => setIncludeMyTeam(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#f4b400]/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#f4b400]"></div>
-              </label>
-            </div>
-            
-            {includeMyTeam && selectedTeam && (
-              <div className="bg-white p-3 rounded-lg border border-[rgba(23,44,68,0.1)]">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    {selectedTeam.image ? (
-                      <img
-                        src={selectedTeam.image}
-                        alt={selectedTeam.name}
-                        className="w-10 h-10 rounded-lg object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 bg-[#e5e5e5] rounded-lg flex items-center justify-center">
-                        <Users className="h-5 w-5 text-[#666666]" />
-                      </div>
-                    )}
-                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#f4b400] rounded-full flex items-center justify-center">
-                      <Crown className="h-2.5 w-2.5 text-[#172c44]" />
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-[#172c44] text-sm">{selectedTeam.name}</h4>
-                    <p className="text-[#666666] text-xs">
-                      {selectedTeam.members}/{selectedTeam.maxMembers} miembros • Equipo oficial
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-2 p-2 bg-[#e8f5e8] rounded border-l-2 border-[#00a884]">
-                  <p className="text-xs text-[#00a884]">
-                    <Shield className="h-3 w-3 inline mr-1" />
-                    Tu equipo participará como una unidad. Los miembros del equipo tendrán prioridad para unirse al partido.
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {!includeMyTeam && (
-              <p className="text-sm text-[#666666]">
-                Los jugadores se organizarán en equipos temporales automáticamente cuando se unan al partido.
-              </p>
-            )}
-          </div>
-        )}
 
         <div>
           <label className="block text-sm text-white mb-2">
             Descripción (opcional)
           </label>
-          <Textarea 
+          <Textarea
             placeholder="Describe tu partido, nivel de juego, reglas especiales..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="resize-none"
-            rows={3}
+            className="min-h-[100px]"
           />
         </div>
+
+        {compatibleTeams.length > 0 && (
+          <div className="flex items-center gap-2">
+            <input 
+              type="checkbox" 
+              id="includeTeam" 
+              checked={includeMyTeam}
+              onChange={(e) => setIncludeMyTeam(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="includeTeam" className="text-white text-sm">
+              Unir a mi equipo "{selectedTeam?.name}" automáticamente
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3">
@@ -566,11 +519,28 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     setLoading(true);
     setError(null);
 
+    let matchLocation = court.location;
+    if (!matchLocation || !matchLocation.lat) {
+      if (court.ownerId) {
+        try {
+          const ownerSnap = await getDoc(doc(db, 'dueno', court.ownerId));
+          if (ownerSnap.exists()) {
+            const od = ownerSnap.data();
+            if (od.location) {
+              matchLocation = { ...od.location, address: od.address || 'Ubicación no disponible' };
+            } else if (od.address) {
+              matchLocation = { address: od.address };
+            }
+          }
+        } catch (e) { console.error("Error fetching owner location", e); }
+      }
+    }
+
     const matchData: any = {
       sport: selectedSport,
       courtId: selectedCourtId,
       courtName: court.name,
-      location: court.location || { address: 'Ubicación no especificada' },
+      location: matchLocation || { address: 'Ubicación no especificada' },
       date: new Date(matchDate + 'T' + matchTime),
       time: matchTime,
       duration: matchDuration,
@@ -666,95 +636,90 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
 
     return (<div className="space-y-6">
       <h2 className="text-white mb-4">Confirma y publica</h2>
-      
-      <Card>
+      <Card className="border-gray-200">
         <CardContent className="p-4 space-y-4">
-          <div className="flex justify-between">
-            <span className="text-gray-600">Deporte:</span>
-            <span className="text-[#172c44] font-bold">{sports.find(s => s.id === selectedSport)?.name}</span>
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="text-[#172c44] font-bold text-lg">{court?.name}</h3>
+              <div className="flex items-center gap-2 text-gray-600 text-sm mt-1">
+                <MapPin size={14} />
+                <span>{court?.location?.address || 'Ubicación no disponible'}</span>
+              </div>
+            </div>
+            <Badge className="bg-[#f4b400] text-[#172c44]">{selectedSport.toUpperCase()}</Badge>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Cancha:</span>
-            <span className="text-[#172c44] font-bold">{court?.name}</span>
+
+          <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-gray-100">
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Fecha</p>
+              <div className="flex items-center gap-2 text-[#172c44]">
+                <Calendar size={16} />
+                <span>{matchDate}</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Hora</p>
+              <div className="flex items-center gap-2 text-[#172c44]">
+                <Clock size={16} />
+                <span>{matchTime} ({matchDuration}h)</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Jugadores</p>
+              <div className="flex items-center gap-2 text-[#172c44]">
+                <Users size={16} />
+                <span>{maxPlayers} máx</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Precio/jugador</p>
+              <div className="flex items-center gap-2 text-[#00a884] font-bold">
+                <DollarSign size={16} />
+                <span>${pricePerPlayer.toLocaleString()}</span>
+              </div>
+            </div>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Fecha:</span>
-            <span className="text-[#172c44] font-bold">{new Date(matchDate).toLocaleDateString()} - {matchTime}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Jugadores:</span>
-            <span className="text-[#172c44] font-bold">{maxPlayers} personas</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Costo por persona:</span>
-            <span className="text-[#00a884] font-bold">${pricePerPlayer.toLocaleString()}</span>
-          </div>
+
           {includeMyTeam && selectedTeam && (
-            <div className="flex justify-between">
-              <span className="text-gray-600">Equipo incluido:</span>
-              <div className="flex items-center space-x-1">
-                <Crown className="h-3 w-3 text-[#f4b400]" />
-                <span className="text-[#172c44]">{selectedTeam.name}</span>
+            <div className="bg-blue-50 p-3 rounded-lg flex items-center gap-3">
+              <Shield className="text-blue-600" size={20} />
+              <div>
+                <p className="text-sm font-bold text-blue-800">Equipo incluido</p>
+                <p className="text-xs text-blue-600">Se unirán {selectedTeam.members?.length || 0} miembros de "{selectedTeam.name}"</p>
               </div>
             </div>
           )}
-          <div className="flex justify-between border-t pt-2">
-            <span className="text-[#172c44]">Total arriendo cancha:</span>
-            <span className="text-[#172c44] font-bold">${totalCost?.toLocaleString() || 'N/A'}</span>
-          </div>
-          <div className="flex justify-between border-t pt-2">
-            <span className="text-[#172c44]">Modo de pago:</span>
-            <div className="flex items-center gap-2">
-              <button className={`${paymentMode === 'deferred' ? 'bg-[#00a884] text-white' : 'bg-gray-200 text-[#172c44]'} px-3 py-1 rounded`} onClick={() => setPaymentMode('deferred')}>Diferido</button>
-              <button className={`${paymentMode === 'immediate' ? 'bg-[#00a884] text-white' : 'bg-gray-200 text-[#172c44]'} px-3 py-1 rounded`} onClick={() => setPaymentMode('immediate')}>Inmediato</button>
+
+          <div className="space-y-3">
+            <p className="font-medium text-[#172c44]">Modo de pago</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div 
+                className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${paymentMode === 'immediate' ? 'border-[#00a884] bg-[#00a884]/10' : 'border-gray-200'}`}
+                onClick={() => setPaymentMode('immediate')}
+              >
+                <p className="font-bold text-[#172c44] text-sm">Pago Inmediato</p>
+                <p className="text-xs text-gray-500">Pagar ahora para confirmar</p>
+              </div>
+              <div 
+                className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${paymentMode === 'deferred' ? 'border-[#f4b400] bg-[#f4b400]/10' : 'border-gray-200'}`}
+                onClick={() => setPaymentMode('deferred')}
+              >
+                <p className="font-bold text-[#172c44] text-sm">Pago Diferido</p>
+                <p className="text-xs text-gray-500">Pagar antes del partido</p>
+              </div>
             </div>
+          </div>
+
+          <div className="flex justify-between items-center pt-2">
+            <span className="text-gray-600">Costo total cancha</span>
+            <span className="text-xl font-bold text-[#172c44]">${totalCost?.toLocaleString()}</span>
           </div>
         </CardContent>
       </Card>
 
-      {/* Mensaje de error visible si algo falla */}
       {error && (
-        <div className="p-3 bg-red-100 border-l-4 border-red-500 text-red-700">
-          <p className="font-bold">Error</p>
-          <p>{error}</p>
-        </div>
-      )}
-
-      {/* Team information based on inclusion */}
-      {includeMyTeam && selectedTeam ? (
-        <div className="space-y-3">
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-center space-x-2 mb-2">
-              <Crown className="h-4 w-4 text-[#00a884]" />
-              <p className="text-sm text-green-800">
-                <strong>Equipo oficial incluido:</strong> {selectedTeam.name}
-              </p>
-            </div>
-            <p className="text-xs text-green-700">
-              Los {selectedTeam.members} miembros de tu equipo tendrán prioridad para unirse. 
-              Si hay espacios adicionales, otros jugadores podrán formar un equipo temporal.
-            </p>
-          </div>
-          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <p className="text-sm text-yellow-800">
-              <strong>Responsabilidad de capitán:</strong> Coordinarás el pago de la cancha y la participación de tu equipo.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <p className="text-sm text-yellow-800">
-              <strong>Importante:</strong> Como organizador, serás responsable de coordinar el pago de la cancha. 
-              Los jugadores pagarán su parte al unirse al partido.
-            </p>
-          </div>
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm text-blue-800">
-              <strong>Equipos temporales:</strong> Al crear este partido, se formarán automáticamente 1 o 2 equipos temporales 
-              cuando los jugadores se unan. Estos equipos son específicos para este partido.
-            </p>
-          </div>
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <span className="block sm:inline">{error}</span>
         </div>
       )}
 
@@ -767,64 +732,58 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           Atrás
         </Button>
         <Button 
-          onClick={handlePublish} // Conectamos la función aquí
+          onClick={handlePublish}
           disabled={loading}
-          className="flex-1 bg-[#00a884] hover:bg-[#008f73] text-white"
+          className="flex-1 bg-[#00a884] hover:bg-[#00a884]/90 text-white"
         >
-          {loading ? 'Publicando...' : 'Publicar Partido'}
+          {loading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Publicando...
+            </>
+          ) : (
+            'Publicar Partido'
+          )}
         </Button>
       </div>
     </div>);
   };
 
-  const renderCurrentStep = () => {
-    switch (step) {
-      case 1: return renderStep1();
-      case 2: return renderStep2();
-      case 3: return renderStep3();
-      case 4: return renderStep4();
-      default: return renderStep1();
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884] pb-20">
-      {/* Header */}
+    <div className="min-h-screen bg-gradient-to-br from-[#172c44] via-[#1f3a56] to-[#172c44] p-4">
       <AppHeader 
         title="Crear Partido" 
-        showLogo={true}
-        showBackButton={false}
+        leftContent={
+          <Button variant="ghost" size="icon" onClick={onBack} className="text-white hover:bg-white/10">
+            <ArrowLeft size={20} />
+          </Button>
+        }
+        className="bg-transparent border-0 mb-6"
       />
-      
-      {/* Progress bar */}
-      <div className="bg-white shadow-sm">
-        <div className="px-4 py-4">
-          <div className="flex justify-between mb-2">
-            {[1, 2, 3, 4].map((stepNum) => (
-              <div
-                key={stepNum}
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                  step >= stepNum
-                    ? 'bg-[#f4b400] text-[#172c44]'
-                    : 'bg-gray-200 text-gray-500'
-                }`}
-              >
-                {stepNum}
-              </div>
-            ))}
+
+      {/* Progress Steps */}
+      <div className="flex justify-between items-center mb-8 px-4 relative">
+        <div className="absolute left-0 right-0 top-1/2 h-1 bg-gray-700 -z-10 rounded-full"></div>
+        <div 
+          className="absolute left-0 top-1/2 h-1 bg-[#f4b400] -z-10 rounded-full transition-all duration-300"
+          style={{ width: `${((step - 1) / 3) * 100}%` }}
+        ></div>
+        {[1, 2, 3, 4].map((s) => (
+          <div 
+            key={s}
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+              step >= s ? 'bg-[#f4b400] text-[#172c44]' : 'bg-gray-700 text-gray-400'
+            }`}
+          >
+            {s}
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-[#f4b400] h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(step / 4) * 100}%` }}
-            />
-          </div>
-        </div>
+        ))}
       </div>
 
-      <div className="p-4 pb-6">
-        {renderCurrentStep()}
-      </div>
+      {step === 1 && renderStep1()}
+      {step === 2 && renderStep2()}
+      {step === 3 && renderStep3()}
+      {step === 4 && renderStep4()}
     </div>
   );
 }

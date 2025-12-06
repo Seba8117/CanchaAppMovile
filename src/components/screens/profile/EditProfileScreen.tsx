@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Camera, Moon, Sun, Save, User, MapPin, Phone, Mail, Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Camera, Moon, Sun, Save, User, MapPin, Phone, Mail, Loader2, AlertTriangle, ArrowLeft, Crosshair, Bell } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Input } from '../../ui/input';
@@ -9,10 +9,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Textarea } from '../../ui/textarea';
 import { AppHeader } from '../../common/AppHeader';
-import { toast } from 'sonner'; // Asegúrate de importar 'sonner' correctamente
+import { toast } from 'sonner';
 
 // --- INICIO: Importaciones de Firebase ---
-import { auth, db } from '../../../Firebase/firebaseConfig'; // Ajusta la ruta si es necesario
+import { auth, db } from '../../../Firebase/firebaseConfig';
 import { doc, getDoc, updateDoc, DocumentData } from 'firebase/firestore';
 // --- FIN: Importaciones de Firebase ---
 
@@ -22,30 +22,28 @@ interface EditProfileScreenProps {
 
 export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
   const [darkMode, setDarkMode] = useState(document.documentElement.classList.contains('dark'));
-  const [profileImage, setProfileImage] = useState<string | null>(null); // Manejo de imagen es visual por ahora
+  const [profileImage, setProfileImage] = useState<string | null>(null);
   const [formData, setFormData] = useState<DocumentData>({
     name: '',
-    email: '', // El email generalmente no se edita aquí, pero lo cargamos
+    email: '',
     phone: '',
-    location: '',
+    location: '', // String para dirección textual
+    locationCoords: null, // { lat, lng }
     bio: '',
     favoritePosition: '',
     level: '',
-    favoriteSport: ''
-    // Agrega aquí los campos específicos del dueño si es necesario distinguirlos
+    favoriteSport: '',
+    notificationsEnabled: true,
+    notificationRadius: '3' // String para el select (1, 3, 5, 10, 0)
   });
   const [userType, setUserType] = useState<'player' | 'owner' | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // --- FUNCIÓN getInitials AÑADIDA AQUÍ ---
   const getInitials = (name: string = '') => {
-    // Si 'name' existe, divide por espacios, toma la primera letra de cada parte, une y pone en mayúsculas.
-    // Si 'name' no existe o está vacío, devuelve '...'
     return name?.split(' ').map(n => n[0]).join('').toUpperCase() || '...';
   };
-  // --- FIN DE LA FUNCIÓN AÑADIDA ---
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -59,13 +57,11 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
       }
 
       try {
-        // Intentamos buscar primero en 'jugador'
         let userDocRef = doc(db, 'jugador', currentUser.uid);
         let userDocSnap = await getDoc(userDocRef);
         let type: 'player' | 'owner' = 'player';
 
         if (!userDocSnap.exists()) {
-          // Si no está en 'jugador', buscamos en 'dueno'
           userDocRef = doc(db, 'dueno', currentUser.uid);
           userDocSnap = await getDoc(userDocRef);
           type = 'owner';
@@ -73,21 +69,20 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
 
         if (userDocSnap.exists()) {
           const data = userDocSnap.data();
-          setFormData({ // Mapeamos los datos de Firestore al estado del formulario
-            name: data.name || data.ownerName || '', // Usamos 'name' para jugador, 'ownerName' para dueño
+          setFormData({
+            name: data.name || data.ownerName || '',
             email: data.email || '',
             phone: data.phone || '',
-            location: data.location || data.address || '', // Usamos 'location' para jugador, 'address' para dueño
-            bio: data.bio || data.description || '', // Usamos 'bio' para jugador, 'description' para dueño
-            // Campos específicos de jugador (si existen)
+            location: data.address || (typeof data.location === 'string' ? data.location : '') || '',
+            locationCoords: (data.location && typeof data.location === 'object' && data.location.lat) ? data.location : null,
+            bio: data.bio || data.description || '',
             favoritePosition: data.favoritePosition || '',
             level: data.level || '',
             favoriteSport: data.favoriteSport || '',
-             // Podrías cargar más datos específicos del dueño aquí si los necesitaras editar
+            notificationsEnabled: data.notificationsEnabled !== false,
+            notificationRadius: String(data.notificationRadius || '3')
           });
           setUserType(type);
-          // Aquí podrías cargar la URL de la imagen si la guardas en Firestore
-          // setProfileImage(data.photoURL || null);
         } else {
           throw new Error("No se encontraron los datos del perfil del usuario.");
         }
@@ -101,14 +96,13 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
     };
 
     fetchUserData();
-  }, []); // Se ejecuta solo una vez al cargar
+  }, []);
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    // Lógica para previsualizar la imagen. La subida real iría en handleSave
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -116,7 +110,6 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
         setProfileImage(e.target?.result as string);
       };
       reader.readAsDataURL(file);
-      // Aquí necesitarías guardar el 'file' en un estado para subirlo luego
     }
   };
 
@@ -127,7 +120,33 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    // Podrías guardar esta preferencia en localStorage o Firestore
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Tu navegador no soporta geolocalización.");
+      return;
+    }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude, longitude } = pos.coords;
+      handleInputChange('locationCoords', { lat: latitude, lng: longitude });
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        const data = await res.json();
+        if (data && data.display_name) {
+          handleInputChange('location', data.display_name);
+        }
+      } catch (e) {
+        console.error("Error geocoding", e);
+      } finally {
+        setLoading(false);
+      }
+    }, (err) => {
+      console.error(err);
+      toast.error("No se pudo obtener la ubicación.");
+      setLoading(false);
+    });
   };
 
   const handleSave = async () => {
@@ -145,33 +164,39 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
       const collectionName = userType === 'player' ? 'jugador' : 'dueno';
       const userDocRef = doc(db, collectionName, currentUser.uid);
 
-      // Prepara los datos a actualizar, adaptando nombres si es necesario
       const dataToUpdate: DocumentData = {
         phone: formData.phone,
-        // Adaptación de nombres según el rol
-        [userType === 'player' ? 'location' : 'address']: formData.location,
         [userType === 'player' ? 'bio' : 'description']: formData.bio,
+        notificationsEnabled: formData.notificationsEnabled,
+        notificationRadius: Number(formData.notificationRadius),
       };
-      // Adapta nombres de campos según el tipo de usuario
+
       if (userType === 'player') {
         dataToUpdate.name = formData.name;
         dataToUpdate.favoritePosition = formData.favoritePosition;
         dataToUpdate.level = formData.level;
         dataToUpdate.favoriteSport = formData.favoriteSport;
-      } else { // owner
-        dataToUpdate.ownerName = formData.name; // Guardamos el 'name' del form como 'ownerName'
-        // Si tienes más campos de dueño en el formulario, agrégalos aquí
+        // Guardamos tanto la dirección en texto como las coordenadas
+        if (formData.locationCoords) {
+          dataToUpdate.location = formData.locationCoords; // Objeto {lat, lng}
+          dataToUpdate.address = formData.location; // String
+        } else {
+          dataToUpdate.location = formData.location; // Fallback string si no hay coords
+        }
+      } else {
+        dataToUpdate.ownerName = formData.name;
+        dataToUpdate.address = formData.location;
+        if (formData.locationCoords) {
+          dataToUpdate.location = formData.locationCoords;
+        }
       }
-
-      // Lógica para subir imagen a Firebase Storage iría aquí
-      // Si la subida es exitosa, obtienes la URL y la añades a dataToUpdate.photoURL
 
       await updateDoc(userDocRef, dataToUpdate);
 
-      toast.success("Perfil actualizado", { // Usando toast.success para un feedback más específico
+      toast.success("Perfil actualizado", {
         description: "Tus cambios han sido guardados.",
       });
-      onBack(); // Regresar a la pantalla anterior
+      onBack();
 
     } catch (err: any) {
       console.error("Error al guardar:", err);
@@ -181,8 +206,6 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
       setSaving(false);
     }
   };
-
-  // --- RENDERIZADO ---
 
   if (loading) {
     return (
@@ -208,7 +231,7 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884]">
       <AppHeader
         title="Editar Perfil"
-        leftContent={ // Usando leftContent para el botón de volver
+        leftContent={
           <Button variant="ghost" size="icon" onClick={onBack} disabled={saving} className="text-white hover:bg-white/10">
             <ArrowLeft size={20} />
           </Button>
@@ -221,8 +244,7 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
         }
       />
 
-      <div className="p-4 space-y-6 pb-20"> {/* Añadido padding bottom */}
-        {/* Profile Picture Section */}
+      <div className="p-4 space-y-6 pb-20">
         <Card className="dark:bg-gray-800">
             <CardHeader><CardTitle className="text-[#172c44] dark:text-white flex items-center gap-2"><Camera size={20} />Foto de Perfil</CardTitle></CardHeader>
             <CardContent className="flex flex-col items-center space-y-4">
@@ -232,7 +254,6 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
                     <AvatarImage src={profileImage} alt="Profile" />
                   ) : (
                     <AvatarFallback className="bg-[#f4b400] text-[#172c44] text-2xl font-bold">
-                      {/* LLAMADA CORRECTA A getInitials */}
                       {getInitials(formData.name)}
                     </AvatarFallback>
                   )}
@@ -246,7 +267,6 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
             </CardContent>
         </Card>
 
-        {/* Personal Information */}
         <Card className="dark:bg-gray-800">
           <CardHeader><CardTitle className="text-[#172c44] dark:text-white flex items-center gap-2"><User size={20} />Información Personal</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -270,9 +290,14 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
              </div>
             <div>
               <Label htmlFor="location" className="dark:text-gray-200">{userType === 'player' ? 'Ubicación' : 'Dirección'}</Label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                <Input id="location" value={formData.location} onChange={(e) => handleInputChange('location', e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-white"/>
+              <div className="space-y-2">
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                  <Input id="location" value={formData.location} onChange={(e) => handleInputChange('location', e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-white"/>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={handleGetCurrentLocation} className="w-full text-[#00a884] border-[#00a884] hover:bg-[#00a884]/10">
+                  <Crosshair size={16} className="mr-2" /> Usar mi ubicación actual
+                </Button>
               </div>
             </div>
             <div>
@@ -282,7 +307,40 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
           </CardContent>
         </Card>
 
-        {/* Sports Preferences (Solo para jugadores) */}
+        {userType === 'player' && (
+          <Card className="dark:bg-gray-800">
+            <CardHeader><CardTitle className="text-[#172c44] dark:text-white flex items-center gap-2"><Bell size={20} />Preferencias de Notificación</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+               <div className="flex items-center justify-between">
+                 <div>
+                   <Label className="dark:text-gray-200">Notificaciones de partidos cercanos</Label>
+                   <p className="text-sm text-gray-600 dark:text-gray-400">Recibe alertas cuando se creen partidos cerca</p>
+                 </div>
+                 <Switch 
+                   checked={formData.notificationsEnabled} 
+                   onCheckedChange={(checked) => handleInputChange('notificationsEnabled', checked)} 
+                   className="data-[state=checked]:bg-[#00a884]"
+                 />
+               </div>
+               
+               {formData.notificationsEnabled && (
+                 <div>
+                   <Label className="dark:text-gray-200">Radio de distancia</Label>
+                   <Select value={formData.notificationRadius} onValueChange={(value) => handleInputChange('notificationRadius', value)}>
+                     <SelectTrigger className="dark:bg-gray-700 dark:text-white"><SelectValue /></SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="1">1 km (Muy cerca)</SelectItem>
+                       <SelectItem value="3">3 km (Cerca)</SelectItem>
+                       <SelectItem value="5">5 km (Zona media)</SelectItem>
+                       <SelectItem value="10">10 km (Zona amplia)</SelectItem>
+                     </SelectContent>
+                   </Select>
+                 </div>
+               )}
+            </CardContent>
+          </Card>
+        )}
+
         {userType === 'player' && (
           <Card className="dark:bg-gray-800">
             <CardHeader><CardTitle className="text-[#172c44] dark:text-white">Preferencias Deportivas</CardTitle></CardHeader>
@@ -329,7 +387,6 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
           </Card>
         )}
 
-        {/* App Settings */}
         <Card className="dark:bg-gray-800">
           <CardHeader><CardTitle className="text-[#172c44] dark:text-white">Configuración</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -346,10 +403,8 @@ export function EditProfileScreen({ onBack }: EditProfileScreenProps) {
           </CardContent>
         </Card>
 
-        {/* Mensaje de error si existe */}
         {error && (<p className="text-center text-red-300 font-semibold">{error}</p>)}
 
-        {/* Action Buttons */}
          <div className="flex gap-3 pt-4">
            <Button variant="outline" className="flex-1 dark:border-gray-600 dark:text-gray-200" onClick={onBack} disabled={saving}>Cancelar</Button>
            <Button className="flex-1 bg-[#00a884] hover:bg-[#00a884]/90 text-white" onClick={handleSave} disabled={saving}>

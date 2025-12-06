@@ -32,12 +32,33 @@ export interface MatchData {
   captainName: string;
   description: string;
   location: {
+    lat?: number;
+    lng?: number;
     address: string;
   };
 }
 
 /**
- * Crea un nuevo partido en la base de datos.
+ * Calcula la distancia en kilómetros entre dos coordenadas (Haversine Formula).
+ */
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371; // Radio de la tierra en km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function deg2rad(deg: number) {
+  return deg * (Math.PI / 180);
+}
+
+/**
+ * Crea un nuevo partido en la base de datos y genera notificaciones de proximidad.
  * @param matchData - Los datos del partido a crear.
  * @returns El ID del nuevo partido.
  */
@@ -53,6 +74,68 @@ export const createMatch = async (matchData: MatchData) => {
       updatedAt: serverTimestamp(),
     };
     const docRef = await addDoc(collection(db, 'matches'), matchWithTimestamp);
+    
+    // --- LÓGICA DE NOTIFICACIONES GEOLOCALIZADAS ---
+    if (matchData.location?.lat && matchData.location?.lng) {
+      // Obtener jugadores que tengan configurada su ubicación y preferencias
+      const playersQuery = query(collection(db, 'jugador'), where('notificationRadius', '>', 0));
+      const playersSnap = await getDocs(playersQuery);
+
+      const batch = writeBatch(db);
+      let notificationCount = 0;
+
+      playersSnap.forEach(playerDoc => {
+        // No notificar al creador del partido
+        if (playerDoc.id === matchData.captainId) return;
+
+        const playerData = playerDoc.data();
+        
+        // Verificar si el jugador tiene ubicación válida
+        if (!playerData.location || !playerData.location.lat || !playerData.location.lng) return;
+
+        // Verificar si tiene habilitadas las notificaciones (si existe el campo)
+        if (playerData.notificationsEnabled === false) return;
+
+        // Calcular distancia
+        const distance = getDistanceFromLatLonInKm(
+          matchData.location.lat!,
+          matchData.location.lng!,
+          playerData.location.lat,
+          playerData.location.lng
+        );
+
+        // Obtener el radio de preferencia del jugador (default 10km si no está definido, pero la query ya filtró > 0)
+        // Ajustamos para usar el valor exacto que el usuario configuró (1, 3, 5, 10km)
+        const maxRadius = Number(playerData.notificationRadius) || 3; // Default a 3km si falla el dato
+
+        if (distance <= maxRadius) {
+          // Crear notificación
+          const notifRef = doc(collection(db, 'notifications'));
+          batch.set(notifRef, {
+            userId: playerDoc.id,
+            type: 'proximity', // Nuevo tipo para icono de mapa
+            title: 'Nuevo partido cerca de ti',
+            message: `Partido de ${matchData.sport} a ${distance.toFixed(1)}km en ${matchData.courtName}.`,
+            data: {
+              matchId: docRef.id,
+              distance: distance,
+              lat: matchData.location.lat,
+              lng: matchData.location.lng
+            },
+            actions: [{ key: 'join', label: 'Ver Partido' }],
+            read: false,
+            createdAt: serverTimestamp()
+          });
+          notificationCount++;
+        }
+      });
+
+      if (notificationCount > 0) {
+        await batch.commit();
+        console.log(`Notificaciones enviadas a ${notificationCount} jugadores cercanos.`);
+      }
+    }
+
     return docRef.id;
   } catch (error) {
     console.error("Error al crear el partido: ", error);
@@ -102,9 +185,12 @@ export const getMatchesForPlayer = async (playerId: string): Promise<DocumentDat
 export const getAvailableMatches = async (): Promise<DocumentData[]> => {
   try {
     const matchesRef = collection(db, 'matches');
+    // Filtra solo partidos con estado 'open' y fecha futura
+    const now = new Date();
     const q = query(
       matchesRef, 
       where('status', '==', 'open'),
+      where('date', '>=', Timestamp.fromDate(now)),
       orderBy('date', 'asc')
     );
     
@@ -112,222 +198,67 @@ export const getAvailableMatches = async (): Promise<DocumentData[]> => {
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
     console.error("Error al obtener partidos disponibles: ", error);
-    throw new Error("No se pudieron cargar los partidos disponibles.");
+    // Si falla por índice compuesto, devolvemos array vacío o manejamos el error
+    return [];
   }
 };
 
-/**
- * Permite a un jugador unirse a un partido.
- * @param matchId - ID del partido.
- * @param playerId - ID del jugador.
- * @param playerName - Nombre del jugador.
- * @returns Éxito de la operación.
- */
-export const joinMatch = async (matchId: string, playerId: string, playerName: string): Promise<boolean> => {
+export const joinMatch = async (matchId: string, userId: string, userName: string) => {
   try {
     const matchRef = doc(db, 'matches', matchId);
     const matchSnap = await getDoc(matchRef);
     
-    if (!matchSnap.exists()) {
-      throw new Error("El partido no existe.");
-    }
+    if (!matchSnap.exists()) throw new Error("El partido no existe");
     
-    const matchData = matchSnap.data();
-    
-    // Verificar si el partido está abierto
-    if (matchData.status !== 'open') {
-      throw new Error("Este partido ya no está disponible.");
-    }
-    
-    // Verificar si el partido está lleno
-    if (matchData.currentPlayers >= matchData.maxPlayers) {
-      throw new Error("El partido está lleno.");
-    }
-    
-    // Verificar si el jugador ya está en el partido
-    if (matchData.players.includes(playerId)) {
-      throw new Error("Ya estás inscrito en este partido.");
-    }
-    
-    // Agregar el jugador al partido
+    const data = matchSnap.data();
+    if (data.currentPlayers >= data.maxPlayers) throw new Error("El partido está lleno");
+    if (data.players.includes(userId)) throw new Error("Ya estás unido a este partido");
+
     await updateDoc(matchRef, {
-      players: arrayUnion(playerId),
-      currentPlayers: increment(1),
-      updatedAt: serverTimestamp(),
+      players: arrayUnion(userId),
+      currentPlayers: increment(1)
     });
-    
-    // Si el partido se llena, cambiar el estado a 'full'
-    if (matchData.currentPlayers + 1 >= matchData.maxPlayers) {
-      await updateDoc(matchRef, {
-        status: 'full'
-      });
-    }
-    
     return true;
   } catch (error) {
-    console.error("Error al unirse al partido: ", error);
+    console.error("Error al unirse al partido:", error);
     throw error;
   }
 };
 
-/**
- * Permite a un jugador salir de un partido.
- * @param matchId - ID del partido.
- * @param playerId - ID del jugador.
- * @returns Éxito de la operación.
- */
-export const leaveMatch = async (matchId: string, playerId: string): Promise<boolean> => {
+export const leaveMatch = async (matchId: string, userId: string) => {
   try {
     const matchRef = doc(db, 'matches', matchId);
     const matchSnap = await getDoc(matchRef);
     
-    if (!matchSnap.exists()) {
-      throw new Error("El partido no existe.");
-    }
+    if (!matchSnap.exists()) throw new Error("El partido no existe");
     
-    const matchData = matchSnap.data();
-    
-    // Verificar si el jugador es el capitán
-    if (matchData.captainId === playerId) {
-      throw new Error("El capitán no puede abandonar el partido. Cancela el partido si es necesario.");
-    }
-    
-    // Remover el jugador del partido
+    const data = matchSnap.data();
+    if (data.captainId === userId) throw new Error("El capitán no puede abandonar el partido. Debe cancelarlo.");
+
     await updateDoc(matchRef, {
-      players: arrayRemove(playerId),
-      currentPlayers: increment(-1),
-      updatedAt: serverTimestamp(),
+      players: arrayRemove(userId),
+      currentPlayers: increment(-1)
     });
-    
-    // Si el partido estaba lleno, cambiar el estado a 'open'
-    if (matchData.status === 'full') {
-      await updateDoc(matchRef, {
-        status: 'open'
-      });
-    }
-    
     return true;
   } catch (error) {
-    console.error("Error al salir del partido: ", error);
+    console.error("Error al salir del partido:", error);
     throw error;
   }
 };
 
-/**
- * Obtiene los detalles de un partido específico.
- * @param matchId - ID del partido.
- * @returns Datos del partido.
- */
-export const getMatchById = async (matchId: string): Promise<DocumentData | null> => {
+export const cancelMatch = async (matchId: string, userId: string) => {
   try {
-    const docRef = doc(db, 'matches', matchId);
-    const docSnap = await getDoc(docRef);
+    const matchRef = doc(db, 'matches', matchId);
+    const matchSnap = await getDoc(matchRef);
     
-    if (docSnap.exists()) {
-      return {
-        id: docSnap.id,
-        ...docSnap.data()
-      };
-    } else {
-      return null;
-    }
+    if (!matchSnap.exists()) throw new Error("El partido no existe");
+    if (matchSnap.data().captainId !== userId) throw new Error("Solo el capitán puede cancelar el partido");
+
+    // En lugar de borrar, actualizamos estado a cancelled
+    await updateDoc(matchRef, { status: 'cancelled' });
+    return true;
   } catch (error) {
-    console.error("Error al obtener el partido: ", error);
-    throw new Error("No se pudo cargar el partido.");
+    console.error("Error al cancelar el partido:", error);
+    throw error;
   }
-};
-
-/**
- * Busca partidos por deporte o ubicación.
- * @param searchTerm - Término de búsqueda.
- * @param sport - Deporte específico (opcional).
- * @returns Array de partidos que coinciden con la búsqueda.
- */
-export const searchMatches = async (searchTerm: string, sport?: string): Promise<DocumentData[]> => {
-  try {
-    let q = query(
-      collection(db, 'matches'),
-      where('status', '==', 'open'),
-      orderBy('date', 'asc')
-    );
-    
-    if (sport) {
-      q = query(q, where('sport', '==', sport));
-    }
-    
-    const querySnapshot = await getDocs(q);
-    const matches = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    
-    // Filtrar por término de búsqueda en el cliente
-    if (searchTerm) {
-      return matches.filter(match => 
-        match.courtName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        match.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        match.location.address.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    return matches;
-  } catch (error) {
-    console.error("Error al buscar partidos: ", error);
-    throw new Error("No se pudieron buscar los partidos.");
-  }
-};
-
-/**
- * Deletes a match and notifies the players. This is NOT an atomic operation.
- * @param matchId - The ID of the match to delete.
- * @returns A promise that resolves when the operation is complete.
- */
-export const deleteMatch = async (matchId: string): Promise<void> => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error("No estás autenticado.");
-  }
-
-  const matchRef = doc(db, 'matches', matchId);
-  const matchSnap = await getDoc(matchRef);
-
-  if (!matchSnap.exists()) {
-    throw new Error("El partido no existe.");
-  }
-
-  const matchData = matchSnap.data();
-
-  if (matchData.captainId !== currentUser.uid) {
-    throw new Error("No tienes permiso para eliminar este partido.");
-  }
-
-  const playersToNotify = matchData.players.filter((pId: string) => pId !== currentUser.uid);
-
-  // Operation is not atomic. We first create notifications.
-  // If this succeeds, but deletion fails, notifications are sent but match is not deleted.
-
-  // 1. Create notifications for players
-  for (const playerId of playersToNotify) {
-    const notificationData = {
-      userId: playerId,
-      type: 'match-cancelled',
-      title: 'Partido Cancelado',
-      message: `El partido en "${matchData.courtName}" para el ${matchData.date.toDate().toLocaleDateString()} a las ${matchData.time} ha sido cancelado por el capitán.`,
-      data: {
-        matchId: matchId,
-        courtName: matchData.courtName,
-        date: matchData.date
-      },
-      read: false,
-      createdAt: serverTimestamp(),
-    };
-    await addDoc(collection(db, 'notifications'), notificationData);
-  }
-
-  // 2. Delete chat and match in a batch
-  const batch = writeBatch(db);
-  const chatRef = doc(db, 'chats', matchId);
-  batch.delete(chatRef);
-  batch.delete(matchRef);
-  await batch.commit();
 };
