@@ -122,6 +122,30 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
     const [captainTeams, setCaptainTeams] = useState<any[]>([]);
     const [isTeamSelectorOpen, setIsTeamSelectorOpen] = useState(false);
 
+    // --- EFFECT: Cargar imagen de la cancha si falta ---
+    const [courtImageToDisplay, setCourtImageToDisplay] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (data?.courtImage) {
+            setCourtImageToDisplay(data.courtImage);
+        } else if (data?.courtId) {
+            // Fetch court image
+            const fetchCourtImage = async () => {
+                try {
+                    const courtDoc = await getDoc(doc(db, 'cancha', data.courtId));
+                    if (courtDoc.exists()) {
+                        const cData = courtDoc.data();
+                        const img = cData.imageUrl || (cData.images && cData.images[0]);
+                        if (img) setCourtImageToDisplay(img);
+                    }
+                } catch (e) {
+                    console.error("Error fetching court image", e);
+                }
+            };
+            fetchCourtImage();
+        }
+    }, [data]);
+
     // --- EFFECT: Cargar datos del partido y jugadores ---
     useEffect(() => {
         const fetchData = async () => {
@@ -492,43 +516,75 @@ export function MatchDetailScreen({ match, onBack, onNavigate, userType }: Match
             <div className="p-4 space-y-6 pb-24">
                 {/* Match Info Card */}
                 <Card>
-                    <CardContent className="p-6">
+                    <div className="h-40 w-full relative">
+                       {/* Intentamos mostrar imagen de la cancha si existe en los datos del partido, 
+                           sino mostramos un placeholder bonito */}
+                       <div className="w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center overflow-hidden rounded-t-xl">
+                            {courtImageToDisplay ? (
+                                <img 
+                                    src={courtImageToDisplay} 
+                                    alt="Cancha" 
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <img 
+                                    src="https://images.unsplash.com/photo-1529900748604-07564a03e7a6?q=80&w=2070&auto=format&fit=crop" 
+                                    alt="Cancha por defecto" 
+                                    className="w-full h-full object-cover opacity-60"
+                                />
+                            )}
+                            <div className="absolute inset-0 bg-black/30"></div>
+                       </div>
+                    </div>
+                    <CardContent className="p-6 pt-4 -mt-4 relative bg-white rounded-xl z-10 mx-2 shadow-sm">
                         <div className="flex justify-between items-start mb-4">
                             <div>
-                                <Badge className="bg-[#f4b400] text-[#172c44] mb-2">{String(data?.sport || 'Deporte')}</Badge>
-                                <h2 className="text-[#172c44] font-bold text-lg mb-1 leading-tight">{String(data?.courtName || 'Cancha')}</h2>
+                                <Badge className="bg-[#f4b400] text-[#172c44] mb-2 font-bold">{String(data?.sport || 'Deporte').toUpperCase()}</Badge>
+                                <h2 className="text-[#172c44] font-bold text-xl mb-1 leading-tight">{String(data?.courtName || 'Cancha')}</h2>
                                 <div className="flex items-center gap-1">
                                     <Star className="text-[#f4b400]" size={14} fill="currentColor" />
-                                    <span className="text-sm text-gray-600">{String(data?.rating || 'N/A')} • Cancha verificada</span>
+                                    <span className="text-sm text-gray-600 font-medium">{String(data?.rating || 'N/A')} • Cancha verificada</span>
                                 </div>
                             </div>
                             <div className="text-right">
-                                <p className="text-2xl font-bold text-[#00a884] mb-0">{formatCLP(pricePerPlayer)}</p>
-                                <p className="text-xs text-gray-500">por jugador</p>
+                                <p className="text-2xl font-black text-[#00a884] mb-0">{formatCLP(pricePerPlayer)}</p>
+                                <p className="text-xs text-gray-500 font-medium">por jugador</p>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 mb-4 text-sm text-gray-700">
-                            <div className="flex items-center gap-2"><Calendar className="text-[#172c44]" size={16} /><span>{matchDate ? formatDate(matchDate) : 'Fecha N/A'}</span></div>
-                            <div className="flex items-center gap-2"><Clock className="text-[#172c44]" size={16} /><span>{String(data?.time || 'Hora N/A')}</span></div>
-                            <div className="flex items-center gap-2"><Users className="text-[#172c44]" size={16} /><span>{currentPlayers}/{maxPlayers || 'N/A'} Jugadores</span></div>
-                            <div className="flex items-center gap-2 overflow-hidden"><MapPin className="text-[#172c44] flex-shrink-0" size={16} /><span className="truncate">{locationText(data?.location)}</span></div>
+                        <div className="grid grid-cols-2 gap-y-4 gap-x-2 mb-6 text-sm text-gray-700">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-gray-100 p-2 rounded-lg"><Calendar className="text-[#172c44]" size={18} /></div>
+                                <span className="font-medium">{matchDate ? formatDate(matchDate) : 'Fecha N/A'}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="bg-gray-100 p-2 rounded-lg"><Clock className="text-[#172c44]" size={18} /></div>
+                                <span className="font-medium">{String(data?.time || 'Hora N/A')}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="bg-gray-100 p-2 rounded-lg"><Users className="text-[#172c44]" size={18} /></div>
+                                <span className="font-medium">{currentPlayers}/{maxPlayers || 'N/A'} Jugadores</span>
+                            </div>
+                            <div className="flex items-center gap-3 overflow-hidden">
+                                <div className="bg-gray-100 p-2 rounded-lg"><MapPin className="text-[#172c44] flex-shrink-0" size={18} /></div>
+                                <span className="truncate font-medium">{locationText(data?.location)}</span>
+                            </div>
                         </div>
 
                         {/* Owner Actions */}
                         {isOwner && (
                             <div className="mt-4 pt-4 border-t border-gray-100">
-                                <Button className="w-full bg-[#00a884] hover:bg-[#008f73] text-white" onClick={handleStartMatch} disabled={starting}>
+                                <Button className="w-full bg-[#00a884] hover:bg-[#008f73] text-white font-bold h-11" onClick={handleStartMatch} disabled={starting}>
                                     {starting ? 'Verificando pago…' : (String(data?.paymentStatus || paymentStatusLocal) === 'approved' ? 'Iniciar Partido' : 'Pagar e Iniciar')}
                                 </Button>
-                                <Button variant="outline" className="w-full mt-2 text-xs" onClick={async () => { const u = auth.currentUser; if (!u) return; await startOwnerMpConnect(u.uid); }}>
+                                <Button variant="outline" className="w-full mt-2 text-xs font-medium h-9" onClick={async () => { const u = auth.currentUser; if (!u) return; await startOwnerMpConnect(u.uid); }}>
                                     Conectar Mercado Pago
                                 </Button>
                             </div>
                         )}
                         
-                        <div className="p-3 bg-gray-50 rounded-lg mt-4 text-sm text-gray-600"> 
-                            Partido de fútbol recreativo. Césped sintético. Incluye vestuarios y estacionamiento.
+                        <div className="p-4 bg-gray-50 rounded-xl mt-4 text-sm text-gray-600 leading-relaxed border border-gray-100"> 
+                            {data?.description || 'Partido recreativo. Cancha sintética profesional con iluminación LED y vestuarios disponibles.'}
                         </div>
                     </CardContent>
                 </Card>

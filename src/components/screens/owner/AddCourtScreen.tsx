@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, MapPin, Clock, Zap } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Zap, Camera, Image as ImageIcon, X } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Input } from '../../ui/input';
@@ -11,9 +11,11 @@ import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
 
+import { compressImage } from '../../../utils/imageUtils';
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig'; // Asegúrate de que esta ruta sea correcta
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+// import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // DESHABILITADO POR PROBLEMAS DE CUENTA
 // --- FIN: Importaciones de Firebase ---
 
 interface AddCourtScreenProps {
@@ -46,6 +48,10 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [ownerLocation, setOwnerLocation] = useState<any>(null);
   const [ownerAddress, setOwnerAddress] = useState('');
+  
+  // Estados para la imagen
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOwner = async () => {
@@ -122,6 +128,21 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
     }));
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setImageFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+    }
+  };
+
+  const removeImage = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+  };
+
   const handleSubmit = async () => {
     setError(null);
     setLoading(true);
@@ -142,12 +163,36 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
     }
 
     try {
+      let imageUrl = '';
+
+      // Subir imagen si existe (USANDO BASE64 COMO FALLBACK)
+      if (imageFile) {
+        // Opción A: Intentar Storage normal (comentado por error de cuota)
+        /*
+        const fileExtension = imageFile.name.split('.').pop();
+        const fileName = `courts/${currentUser.uid}/${Date.now()}.${fileExtension}`;
+        const storageRef = ref(storage, fileName);
+        const snapshot = await uploadBytes(storageRef, imageFile);
+        imageUrl = await getDownloadURL(snapshot.ref);
+        */
+
+        // Opción B: Base64 en Firestore (Solución Temporal)
+        try {
+          // Comprimimos drásticamente para no exceder 1MB de documento
+          imageUrl = await compressImage(imageFile, 600, 0.5); 
+        } catch (e) {
+          console.error("Error comprimiendo imagen", e);
+          // Si falla, seguimos sin imagen
+        }
+      }
+
       // 3. Preparar el objeto de datos que se guardará en Firebase
       const orderedAvailability = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].reduce((acc: any, key) => {
         const v = (formData.availability as any)[key] || { enabled: false };
         acc[key] = v;
         return acc;
       }, {} as any);
+      
       const courtData = {
         ...formData,
         availability: orderedAvailability,
@@ -155,6 +200,8 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
         capacity: Number(formData.capacity) || 0, // Convertir a número o establecer 0 si está vacío
         ownerId: currentUser.uid, // ¡Asocia la cancha al dueño!
         location: ownerLocation ? { ...ownerLocation, address: ownerAddress } : { address: ownerAddress },
+        imageUrl: imageUrl, // Guardar URL de la imagen principal
+        images: imageUrl ? [imageUrl] : [], // Guardar también en array para compatibilidad con galería
         createdAt: serverTimestamp() // Agrega una marca de tiempo de cuándo fue creada
       };
 
@@ -190,6 +237,41 @@ export function AddCourtScreen({ onBack, onNavigate }: AddCourtScreenProps) {
       />
 
       <div className="p-4 pb-20 space-y-6">
+        
+        {/* Foto de la Cancha */}
+        <Card>
+            <CardHeader>
+                <CardTitle className="text-[#172c44] flex items-center gap-2">
+                    <Camera size={20} />
+                    Foto de la Cancha
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center gap-4">
+                <div className="relative w-full h-48 bg-gray-100 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 flex items-center justify-center">
+                    {imagePreview ? (
+                        <>
+                            <img src={imagePreview} alt="Vista previa" className="w-full h-full object-cover" />
+                            <button 
+                                onClick={removeImage}
+                                className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
+                            >
+                                <X size={16} />
+                            </button>
+                        </>
+                    ) : (
+                        <label className="cursor-pointer flex flex-col items-center gap-2 w-full h-full justify-center hover:bg-gray-50 transition-colors">
+                            <ImageIcon size={48} className="text-gray-400" />
+                            <span className="text-gray-500 font-medium">Toca para subir una foto</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                        </label>
+                    )}
+                </div>
+                <p className="text-xs text-gray-500 text-center">
+                    Sube una foto clara de tu cancha para atraer más jugadores. Formatos: JPG, PNG.
+                </p>
+            </CardContent>
+        </Card>
+
         {/* Información Básica */}
         <Card>
           <CardHeader>

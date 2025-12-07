@@ -243,52 +243,94 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const renderStep2 = () => (
     <div className="space-y-6">
       <h2 className="text-white mb-4">Selecciona una cancha</h2>
-      <div className="space-y-3">
-        {filteredCourts.map((court) => (
-          <Card 
-            key={court.id} 
-            className={`cursor-pointer transition-colors ${
-              selectedCourtId === court.id
-                ? 'border-[#f4b400] bg-[#f4b400]'
-                : 'border-gray-200'
-            }`}
-            onClick={() => setSelectedCourtId(court.id)}
-          >
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-[#172c44] mb-1">{court.name}</h3>
-                  <div className="flex items-center gap-4 text-sm text-gray-600">
-                    <div className="flex items-center gap-1">
-                      <MapPin size={14} />
-                      <span>{court.location?.address || 'Ubicación no disponible'}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span>⭐ {court.rating || 'N/A'}</span>
-                    </div>
+      <div className="space-y-4">
+        {filteredCourts.map((court) => {
+          const bgImage = court.imageUrl || (court.images && court.images.length > 0 ? court.images[0] : null);
+          return (
+            <Card 
+              key={court.id} 
+              className={`cursor-pointer transition-all overflow-hidden border-0 shadow-lg group hover:scale-[1.02] ${
+                selectedCourtId === court.id
+                  ? 'ring-2 ring-[#f4b400]'
+                  : ''
+              }`}
+              onClick={() => setSelectedCourtId(court.id)}
+            >
+              <div className="h-48 w-full relative">
+                {bgImage ? (
+                  <img src={bgImage} alt={court.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                    <Crown size={32} className="text-gray-400" />
                   </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                
+                {/* Badge de Rating */}
+                <div className="absolute top-3 right-3">
+                   <Badge className="bg-[#f4b400] text-[#172c44] border-0 font-bold shadow-sm flex items-center gap-1">
+                       <Crown size={12} fill="currentColor" /> {court.rating ? Number(court.rating).toFixed(1) : 'Nuevo'}
+                   </Badge>
                 </div>
-                <div className="text-right">
-                  <p className="text-[#00a884]">${court.pricePerHour?.toLocaleString() || 'N/A'}</p>
-                  <p className="text-xs text-gray-600">por hora</p>
+
+                {/* Título y Ubicación sobre la imagen */}
+                <div className="absolute bottom-0 left-0 right-0 p-4">
+                   <h3 className="font-['Outfit'] font-black text-2xl text-white mb-1 leading-tight shadow-sm">{court.name}</h3>
+                   <p className="text-white/90 font-medium text-sm flex items-center gap-2">
+                       <MapPin size={14} className="text-[#f4b400]" />
+                       {court.location?.address || 'Ubicación no disponible'}
+                   </p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+              
+              <CardContent className="p-5 space-y-4 bg-white">
+                {/* Información Detallada (Superficie y Capacidad) */}
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Superficie</p>
+                        <p className="font-['Outfit'] font-bold text-[#172c44] text-sm flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-[#00a884]"></div>
+                            {court.surface || 'N/A'}
+                        </p>
+                    </div>
+                    <div className="space-y-1">
+                        <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Capacidad</p>
+                        <p className="font-['Outfit'] font-bold text-[#172c44] text-sm flex items-center gap-1.5">
+                            <Users size={14} className="text-indigo-500" />
+                            {court.capacity || '0'} Jugadores
+                        </p>
+                    </div>
+                </div>
+
+                {/* Precio y Selección */}
+                <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-100">
+                     <div>
+                        <p className="font-['Outfit'] font-black text-xl text-[#00a884]">
+                            ${court.pricePerHour?.toLocaleString() || 'N/A'}
+                        </p>
+                        <p className="text-xs text-gray-400 font-medium">por hora</p>
+                     </div>
+                     <Badge className={`px-4 py-2 text-sm font-bold border-0 ${selectedCourtId === court.id ? 'bg-[#172c44] text-white' : 'bg-gray-100 text-gray-500'}`}>
+                        {selectedCourtId === court.id ? 'Seleccionada' : 'Seleccionar'}
+                     </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
-      <div className="flex gap-3">
+      <div className="flex gap-3 pb-24">
         <Button 
           variant="outline" 
           onClick={() => setStep(1)}
-          className="flex-1"
+          className="flex-1 text-white border-white/30 hover:bg-white/10 hover:text-white bg-transparent"
         >
           Atrás
         </Button>
         <Button 
           onClick={() => setStep(3)}
           disabled={!selectedCourtId}
-          className="flex-1 bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44]"
+          className="flex-1 bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] font-bold"
         >
           Continuar
         </Button>
@@ -460,18 +502,18 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
         )}
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 pb-24">
         <Button 
           variant="outline" 
           onClick={() => setStep(2)}
-          className="flex-1"
+          className="flex-1 text-white border-white/30 hover:bg-white/10 hover:text-white bg-transparent"
         >
           Atrás
         </Button>
         <Button 
           onClick={() => setStep(4)}
           disabled={!matchDate || !matchTime}
-          className="flex-1 bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44]"
+          className="flex-1 bg-[#f4b400] hover:bg-[#e6a200] text-[#172c44] font-bold"
         >
           Continuar
         </Button>
@@ -536,10 +578,17 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       }
     }
 
-    const matchData: any = {
+      // MODO BASE64 (FALLBACK POR ERROR DE PLAN FIREBASE)
+      // Guardamos la imagen de la cancha seleccionada en el partido
+      let courtImage = null;
+      if (court.imageUrl) courtImage = court.imageUrl;
+      else if (court.images && court.images.length > 0) courtImage = court.images[0];
+
+      const matchData: any = {
       sport: selectedSport,
       courtId: selectedCourtId,
       courtName: court.name,
+      courtImage: courtImage, // Guardamos la imagen
       location: matchLocation || { address: 'Ubicación no especificada' },
       date: new Date(matchDate + 'T' + matchTime),
       time: matchTime,
@@ -723,18 +772,18 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 pb-24">
         <Button 
           variant="outline" 
           onClick={() => setStep(3)}
-          className="flex-1"
+          className="flex-1 text-white border-white/30 hover:bg-white/10 hover:text-white bg-transparent"
         >
           Atrás
         </Button>
         <Button 
           onClick={handlePublish}
           disabled={loading}
-          className="flex-1 bg-[#00a884] hover:bg-[#00a884]/90 text-white"
+          className="flex-1 bg-[#00a884] hover:bg-[#00a884]/90 text-white font-bold"
         >
           {loading ? (
             <>
@@ -753,6 +802,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     <div className="min-h-screen bg-gradient-to-br from-[#172c44] via-[#1f3a56] to-[#172c44] p-4">
       <AppHeader 
         title="Crear Partido" 
+        titleClassName="text-white font-bold"
         leftContent={
           <Button variant="ghost" size="icon" onClick={onBack} className="text-white hover:bg-white/10">
             <ArrowLeft size={20} />

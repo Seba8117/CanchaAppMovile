@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-// 1. AÑADIDO 'MessageSquare'
-import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare, Star } from 'lucide-react';
+import { Building, Calendar, Trophy, Users, Plus, TrendingUp, Clock, MapPin, Settings, LogOut, MoreVertical, AlertTriangle, MessageSquare, Star, Edit, Trash2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -10,16 +9,16 @@ import { AppHeader } from '../../common/AppHeader';
 import logoIcon from 'figma:asset/66394a385685f7f512fa4478af752d1d9db6eb4e.png';
 // Firebase
 import { auth, db } from '../../../Firebase/firebaseConfig';
-  import {
-    collection,
-    query,
-    where,
-    getDocs,
-    orderBy,
-    limit,
-    Timestamp,
-    onSnapshot,
-  } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  orderBy,
+  limit,
+  Timestamp,
+  onSnapshot,
+} from 'firebase/firestore';
 
 interface OwnerDashboardProps {
   onNavigate: (screen: string, data?: any) => void;
@@ -54,22 +53,8 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     status: string;
   }>>([]);
 
-  const [tournaments, setTournaments] = useState<Array<{
-    id: string;
-    name: string;
-    sport: string;
-    participants?: number;
-    startDate: string;
-    prize: number;
-    status: string;
-  }>>([]);
+  const [courts, setCourts] = useState<any[]>([]);
   
-  const [dashboardTotals, setDashboardTotals] = useState({
-    tournamentsRegistered: 0,
-    tournamentsCompleted: 0,
-    teamsTotal: 0,
-  });
-
   const [screenLoading, setScreenLoading] = useState(true);
   const [screenError, setScreenError] = useState<string | null>(null);
 
@@ -103,7 +88,12 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           where('isActive', '==', true)
         );
         const courtsSnap = await getDocs(courtsQ);
-        const totalCourts = courtsSnap.size; // usamos este número como "Canchas Activas"
+        const courtsList = courtsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const totalCourts = courtsList.length;
+        
+        // Calcular rating promedio de las canchas
+        const totalRating = courtsList.reduce((acc, court: any) => acc + (Number(court.rating) || 0), 0);
+        const avgRating = totalCourts > 0 ? (totalRating / totalCourts) : 0;
 
         // 2) Reservas del mes (counts + revenue)
         const bookingsRef = collection(db, 'bookings');
@@ -180,11 +170,8 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           ? Math.round(((monthlyRevenue - prevRevenue) / prevRevenue) * 100)
           : 100; // Si el mes anterior fue 0, mostramos +100% por simplicidad
 
-        // 4) Torneos del dueño
-        const tournamentsQ = query(collection(db, 'torneo'), where('ownerId', '==', currentUser.uid));
-        const tournamentsSnap = await getDocs(tournamentsQ);
-        const tournamentsData = tournamentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const activeTournaments = tournamentsData.filter((t: any) => t.status !== 'finalizado').length;
+        // 4) Torneos del dueño - NO SE USA PERO MANTENEMOS LA VARIABLE EN STATS
+        const activeTournaments = 0;
 
         // 5) Actividad reciente: últimas 5 reservas
         const recentQ = query(
@@ -221,23 +208,31 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
           monthlyRevenue,
           revenueDeltaPct,
           activeTournaments,
-          averageRating: 4.8, // Placeholder o calculado si tienes reseñas
+          averageRating: avgRating,
         });
         setBookingsToday(bookingsTodayCount);
         setRecentBookings(recent);
-        setTournaments(tournamentsData.map((t: any) => ({
-          id: t.id,
-          name: t.name,
-          sport: t.sport,
-          participants: t.registeredCount || 0,
-          startDate: t.startDate?.toDate?.().toLocaleDateString() || String(t.startDate || '').split('T')[0],
-          prize: Number(t.prizePool) || 0,
-          status: t.status
-        })).slice(0, 3));
+        setCourts(courtsList);
 
       } catch (err: any) {
         console.error("Error loading dashboard:", err);
-        setScreenError(err.message || "Error al cargar datos");
+        
+        // Detectar error de índice faltante
+        if (err.message && String(err.message).includes('requires an index')) {
+            // Intentar extraer la URL
+            const urlMatch = String(err.message).match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+            const indexUrl = urlMatch ? urlMatch[0] : null;
+            
+            // Usamos un formato especial JSON stringificado para pasar data compleja al estado de error
+            setScreenError(JSON.stringify({
+                type: 'index_error',
+                message: 'Se requiere configurar un índice en la base de datos para ver las estadísticas.',
+                url: indexUrl,
+                raw: err.message
+            }));
+        } else {
+            setScreenError(err.message || "Error al cargar datos");
+        }
       } finally {
         setScreenLoading(false);
       }
@@ -251,15 +246,6 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
 
-    // Escuchar cambios en chats donde el dueño participa
-    // Asumiendo que 'chats' tiene un campo 'unreadCounts' o similar, o escuchando mensajes
-    // Aquí implementamos una lógica simplificada: escuchar chats con mensajes no leídos
-    // Una mejor aproximación sería tener un contador global en el perfil del usuario o una colección 'unread_messages'
-    
-    // OPCIÓN 1: Consulta directa si tienes una estructura que lo soporte
-    // const q = query(collection(db, 'chats'), where('participantsUids', 'array-contains', currentUser.uid));
-    
-    // OPCIÓN 2 (Más robusta para tiempo real): Escuchar todos los chats del usuario
     const q = query(
       collection(db, 'chats'), 
       where('participantsUids', 'array-contains', currentUser.uid)
@@ -269,15 +255,8 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
       let count = 0;
       snapshot.docs.forEach(doc => {
         const data = doc.data();
-        // Verificar si hay mensajes no leídos para este usuario
-        // Esto depende de cómo guardes el estado de lectura. 
-        // Ejemplo: data.unreadCountMap?.[currentUser.uid] > 0
         if (data.unreadCountMap && typeof data.unreadCountMap[currentUser.uid] === 'number') {
           count += data.unreadCountMap[currentUser.uid];
-        } else {
-          // Fallback o lógica alternativa si no existe el mapa
-          // Por ejemplo, si lastMessageSenderId !== currentUser.uid y !data.readBy?.includes(currentUser.uid)
-          // Para simplificar, dejaremos 0 si no está implementado el mapa
         }
       });
       setUnreadMessages(count);
@@ -288,17 +267,71 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
   if (screenLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 to-purple-900">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#172c44] to-[#00a884]">
         <p className="text-white mt-4 font-['Outfit']">Cargando Dashboard...</p>
       </div>
     );
   }
 
   if (screenError) {
+    let errorData = { type: 'general', message: screenError, url: null };
+    try {
+        const parsed = JSON.parse(screenError);
+        if (parsed && parsed.type) errorData = parsed;
+    } catch {}
+
+    if (errorData.type === 'index_error') {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#172c44] via-[#243b55] to-[#00a884] p-6 text-center font-['Outfit'] relative overflow-hidden">
+                {/* Background decoration */}
+                <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-white/5 rounded-full blur-3xl"></div>
+                <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-[#f4b400]/10 rounded-full blur-3xl"></div>
+
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 p-8 rounded-3xl shadow-2xl max-w-md w-full relative overflow-hidden z-10">
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[#f4b400] to-[#ff6f00]"></div>
+                    
+                    <div className="mb-6 relative">
+                        <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center mx-auto backdrop-blur-sm">
+                            <Settings className="h-10 w-10 text-[#f4b400] animate-[spin_10s_linear_infinite]" />
+                        </div>
+                    </div>
+
+                    <h2 className="text-2xl font-black text-white mb-3">Optimización Necesaria</h2>
+                    <p className="text-indigo-100 mb-8 text-sm leading-relaxed">
+                        Para mostrarte las estadísticas detalladas y gráficos de rendimiento, necesitamos activar un índice de alto rendimiento en tu base de datos.
+                    </p>
+                    
+                    {errorData.url && (
+                        <Button 
+                            className="w-full py-6 bg-gradient-to-r from-[#f4b400] to-[#ffca28] hover:from-[#ffca28] hover:to-[#ffd54f] text-[#172c44] font-black text-base shadow-lg hover:shadow-orange-500/20 transition-all transform hover:-translate-y-1 mb-4 border-0"
+                            onClick={() => window.open(errorData.url!, '_blank')}
+                        >
+                            <TrendingUp className="mr-2 h-5 w-5" />
+                            Activar Optimización
+                        </Button>
+                    )}
+                    
+                    <p className="text-xs text-white/50 mb-6 px-4">
+                        Esta acción abrirá la consola de configuración. El proceso es automático y solo se realiza una vez.
+                    </p>
+
+                    <Button 
+                        variant="outline" 
+                        className="w-full border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white hover:border-white/20 transition-all"
+                        onClick={() => window.location.reload()}
+                    >
+                        <Clock className="mr-2 h-4 w-4" />
+                        Ya lo activé, recargar
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
         <AlertTriangle className="h-12 w-12 text-red-500 mb-2" />
-        <p className="text-red-600 text-center font-bold">{screenError}</p>
+        <p className="text-red-600 text-center font-bold">{errorData.message}</p>
         <Button className="mt-4" onClick={() => window.location.reload()}>Reintentar</Button>
       </div>
     );
@@ -334,11 +367,25 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
     }
   };
 
+  const getSportIcon = (sport: string) => {
+    switch (sport) {
+      case 'futbol': return '⚽';
+      case 'basquet': return '🏀';
+      case 'tenis': return '🎾';
+      case 'padel': return '🏓';
+      case 'volley': return '🏐';
+      case 'futsal': return '⚽';
+      default: return '🏟️';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 font-['Outfit']">
+    <div className="min-h-screen bg-gradient-to-br from-[#172c44] to-[#00a884] pb-20 font-['Outfit']">
       <AppHeader 
         title="Panel de Control" 
         showLogo={true}
+        className="bg-transparent"
+        titleClassName="text-white font-black"
         leftContent={
           <img src={logoIcon} alt="Logo" className="w-8 h-8" />
         }
@@ -348,7 +395,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
             <Button 
               size="sm" 
               variant="ghost" 
-              className="text-[#172c44] relative"
+              className="text-white hover:bg-white/10 relative"
               onClick={() => onNavigate('owner-chat')}
             >
               <MessageSquare size={22} />
@@ -361,7 +408,7 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-[#172c44]">
+                <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
                   <MoreVertical size={22} />
                 </Button>
               </DropdownMenuTrigger>
@@ -465,35 +512,35 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
-          <TabsList className="bg-white p-1 rounded-xl shadow-sm border border-gray-100 grid w-full grid-cols-2 h-auto">
+          <TabsList className="bg-white/10 backdrop-blur-md p-1 rounded-xl border border-white/20 grid w-full grid-cols-2 h-auto">
             <TabsTrigger 
               value="overview"
-              className="rounded-lg data-[state=active]:bg-[#172c44] data-[state=active]:text-white font-['Outfit'] font-bold py-2.5 transition-all duration-300"
+              className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-[#172c44] text-white font-['Outfit'] font-bold py-2.5 transition-all duration-300"
             >
               Resumen
             </TabsTrigger>
             <TabsTrigger 
-              value="tournaments"
-              className="rounded-lg data-[state=active]:bg-[#172c44] data-[state=active]:text-white font-['Outfit'] font-bold py-2.5 transition-all duration-300"
+              value="courts"
+              className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-[#172c44] text-white font-['Outfit'] font-bold py-2.5 transition-all duration-300"
             >
-              Torneos
+              Canchas
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
             {/* Recent Bookings */}
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-['Outfit'] font-black text-xl text-[#172c44]">Reservas Recientes</h2>
-              <Button variant="link" className="text-[#00a884] font-bold" onClick={() => onNavigate('bookings')}>Ver Todo</Button>
+              <h2 className="font-['Outfit'] font-black text-xl text-white">Reservas Recientes</h2>
+              <Button variant="link" className="text-white/90 hover:text-white font-bold" onClick={() => onNavigate('bookings')}>Ver Todo</Button>
             </div>
             
             <div className="space-y-3">
               {recentBookings.length === 0 ? (
-                <div className="text-center py-8 bg-white rounded-xl border border-dashed border-gray-300">
-                  <p className="text-gray-500">No hay reservas recientes</p>
+                <div className="text-center py-8 bg-white/10 backdrop-blur-md rounded-xl border border-dashed border-white/20">
+                  <p className="text-white/70">No hay reservas recientes</p>
                 </div>
               ) : recentBookings.map((booking) => (
-                <Card key={booking.id} className="border-0 shadow-sm hover:shadow-md transition-shadow bg-white overflow-hidden group">
+                <Card key={booking.id} className="border-0 shadow-sm hover:shadow-md transition-shadow bg-white/95 overflow-hidden group">
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#00a884] group-hover:w-2 transition-all"></div>
                   <CardContent className="p-4 pl-6">
                     <div className="flex justify-between items-center">
@@ -525,95 +572,178 @@ export function OwnerDashboard({ onNavigate, onLogout }: OwnerDashboardProps) {
 
             {/* Quick Stats Row */}
             <div className="grid grid-cols-3 gap-4 mt-8">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-indigo-700">{bookingsToday}</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-indigo-600 mt-1">Reservas Hoy</p>
+              <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 text-center">
+                <p className="font-['Outfit'] font-black text-2xl text-white">{bookingsToday}</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-indigo-100 mt-1">Reservas Hoy</p>
               </div>
-              <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-emerald-700">{Number(stats.averageRating || 0).toFixed(1)}</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-emerald-600 mt-1">Rating Promedio</p>
+              <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 text-center">
+                <p className="font-['Outfit'] font-black text-2xl text-white">{Number(stats.averageRating || 0).toFixed(1)}</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-emerald-100 mt-1">Rating Promedio</p>
               </div>
-              <div className="bg-gradient-to-br from-orange-50 to-amber-100 rounded-2xl p-4 text-center">
-                <p className="font-['Outfit'] font-black text-2xl text-amber-700">{todayLabel.day}</p>
-                <p className="font-['Outfit'] font-semibold text-xs text-amber-600 mt-1">{todayLabel.month}</p>
+              <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 text-center">
+                <p className="font-['Outfit'] font-black text-2xl text-white">{todayLabel.day}</p>
+                <p className="font-['Outfit'] font-semibold text-xs text-amber-100 mt-1">{todayLabel.month}</p>
               </div>
             </div>
           </TabsContent>
 
-          <TabsContent value="tournaments" className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+          <TabsContent value="courts" className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
             <div className="grid grid-cols-2 gap-4 mb-6">
               <Button 
-                className="h-auto py-4 bg-gradient-to-br from-[#172c44] to-[#2a4059] hover:shadow-lg transition-all"
-                onClick={() => onNavigate('create-tournament')}
+                className="h-auto py-4 bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all"
+                onClick={() => onNavigate('add-court')}
               >
                 <div className="flex flex-col items-center gap-2">
-                  <div className="p-2 bg-white/10 rounded-full">
-                    <Trophy size={20} className="text-[#f4b400]" />
+                  <div className="p-2 bg-white/20 rounded-full">
+                    <Plus size={20} className="text-white" />
                   </div>
-                  <span className="font-['Outfit'] font-bold text-sm">Crear Torneo</span>
+                  <span className="font-['Outfit'] font-bold text-sm text-white">Nueva Cancha</span>
                 </div>
               </Button>
               <Button 
-                className="h-auto py-4 bg-white border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#00a884] hover:text-[#00a884] transition-all"
+                className="h-auto py-4 bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all"
                 onClick={() => onNavigate('owner-courts')}
               >
                 <div className="flex flex-col items-center gap-2">
-                  <div className="p-2 bg-gray-100 rounded-full">
-                    <Plus size={20} />
+                  <div className="p-2 bg-white/20 rounded-full">
+                    <Settings size={20} className="text-white" />
                   </div>
-                  <span className="font-['Outfit'] font-bold text-sm">Nueva Cancha</span>
+                  <span className="font-['Outfit'] font-bold text-sm text-white">Administrar</span>
                 </div>
               </Button>
             </div>
 
-            <h3 className="font-['Outfit'] font-black text-xl text-[#172c44] mb-4">Torneos Activos</h3>
+            <h3 className="font-['Outfit'] font-black text-xl text-white mb-4">Mis Canchas Activas</h3>
             
-            {tournaments.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-200">
-                <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 font-medium">No hay torneos activos</p>
-                <Button variant="link" className="text-[#00a884] font-bold mt-2" onClick={() => onNavigate('create-tournament')}>
-                  Crear el primero
+            {courts.length === 0 ? (
+              <div className="text-center py-12 bg-white/10 backdrop-blur-md rounded-2xl border border-dashed border-white/20">
+                <Building className="w-12 h-12 text-white/50 mx-auto mb-3" />
+                <p className="text-white/70 font-medium">No hay canchas registradas</p>
+                <Button variant="link" className="text-[#f4b400] font-bold mt-2" onClick={() => onNavigate('add-court')}>
+                  Crear la primera
                 </Button>
               </div>
             ) : (
               <div className="space-y-4">
-                {tournaments.map((tournament) => (
-                  <Card 
-                    key={tournament.id} 
-                    className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-all cursor-pointer group"
-                    onClick={() => onNavigate('tournament-management', tournament)}
-                  >
-                    <div className="h-2 bg-gradient-to-r from-[#f4b400] to-[#ff6f00]"></div>
-                    <CardContent className="p-5">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="font-['Outfit'] font-black text-lg text-[#172c44] group-hover:text-[#00a884] transition-colors">
-                            {tournament.name}
-                          </h3>
-                          <Badge variant="secondary" className="mt-2 bg-indigo-50 text-indigo-700 border-indigo-100">
-                            {tournament.sport}
-                          </Badge>
+                {courts.map((court) => {
+                   const bgImage = court.imageUrl || (court.images && court.images.length > 0 ? court.images[0] : null);
+                   const amenitiesCount = court.amenities?.length || 0;
+                   const rating = Number(court.rating) || 0;
+                   const hasLighting = court.amenities?.some((a: string) => a.toLowerCase().includes('iluminación') || a.toLowerCase().includes('luz')) || false;
+                   
+                   return (
+                    <Card key={court.id} className="bg-white/95 backdrop-blur-sm shadow-lg border-0 overflow-hidden cursor-pointer group hover:shadow-2xl transition-all duration-300" onClick={() => onNavigate('court-detail', court)}>
+                       {/* 1. Imagen Clara y de Alta Calidad */}
+                       <div className="h-48 w-full relative">
+                         {bgImage ? (
+                           <img src={bgImage} alt={court.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                         ) : (
+                           <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                              <Building className="text-gray-400 w-12 h-12" />
+                           </div>
+                         )}
+                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                         
+                         {/* Badge de Deporte */}
+                         <div className="absolute top-3 left-3">
+                            <Badge className="bg-white/90 text-[#172c44] backdrop-blur-md border-0 font-bold shadow-sm px-3 py-1">
+                                {getSportIcon(court.sport)} {court.sport.charAt(0).toUpperCase() + court.sport.slice(1)}
+                            </Badge>
+                         </div>
+
+                         {/* Badge de Rating */}
+                         <div className="absolute top-3 right-3">
+                            <Badge className="bg-[#f4b400] text-[#172c44] border-0 font-bold shadow-sm flex items-center gap-1">
+                                <Star size={12} fill="currentColor" /> {rating > 0 ? rating.toFixed(1) : 'Nuevo'}
+                            </Badge>
+                         </div>
+
+                         {/* Título y Precio sobre la imagen */}
+                         <div className="absolute bottom-0 left-0 right-0 p-4">
+                            <h3 className="font-['Outfit'] font-black text-2xl text-white mb-1 leading-tight shadow-sm">{court.name}</h3>
+                            <p className="text-white/90 font-medium text-sm flex items-center gap-2">
+                                <MapPin size={14} className="text-[#f4b400]" />
+                                {court.location?.address || 'Ubicación no disponible'}
+                            </p>
+                         </div>
+                       </div>
+
+                       <CardContent className="p-5 space-y-4">
+                        {/* 2. Información Detallada */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Superficie</p>
+                                <p className="font-['Outfit'] font-bold text-[#172c44] text-sm flex items-center gap-1.5">
+                                    <div className="w-2 h-2 rounded-full bg-[#00a884]"></div>
+                                    {court.surface || 'N/A'}
+                                </p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Capacidad</p>
+                                <p className="font-['Outfit'] font-bold text-[#172c44] text-sm flex items-center gap-1.5">
+                                    <Users size={14} className="text-indigo-500" />
+                                    {court.capacity || '0'} Jugadores
+                                </p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Dimensiones</p>
+                                <p className="font-['Outfit'] font-bold text-[#172c44] text-sm flex items-center gap-1.5">
+                                    <Settings size={14} className="text-gray-400" />
+                                    Estándar
+                                </p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Iluminación</p>
+                                <p className={`font-['Outfit'] font-bold text-sm flex items-center gap-1.5 ${hasLighting ? 'text-amber-600' : 'text-gray-400'}`}>
+                                    <div className={`w-2 h-2 rounded-full ${hasLighting ? 'bg-amber-500 animate-pulse' : 'bg-gray-300'}`}></div>
+                                    {hasLighting ? 'Disponible' : 'No disponible'}
+                                </p>
+                            </div>
                         </div>
-                        <div className="text-right">
-                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Premio</span>
-                          <p className="font-['Outfit'] font-black text-xl text-[#00a884]">{formatCLP(tournament.prize)}</p>
+
+                        {/* Servicios Adicionales */}
+                        {amenitiesCount > 0 && (
+                            <div className="pt-2 border-t border-gray-100">
+                                <p className="text-xs text-gray-500 font-semibold mb-2">Servicios Incluidos</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {court.amenities.slice(0, 3).map((amenity: string, idx: number) => (
+                                        <Badge key={idx} variant="secondary" className="bg-gray-100 text-gray-600 text-[10px] border-0">
+                                            {amenity}
+                                        </Badge>
+                                    ))}
+                                    {amenitiesCount > 3 && (
+                                        <Badge variant="secondary" className="bg-gray-100 text-gray-600 text-[10px] border-0">
+                                            +{amenitiesCount - 3} más
+                                        </Badge>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Precio y Disponibilidad */}
+                        <div className="flex items-center justify-between pt-2 mt-2">
+                             <div>
+                                <p className="font-['Outfit'] font-black text-xl text-[#00a884]">
+                                    {formatCLP(court.pricePerHour)}
+                                </p>
+                                <p className="text-xs text-gray-400 font-medium">por hora</p>
+                             </div>
+                             <Button 
+                                size="sm" 
+                                className="bg-[#172c44] hover:bg-[#2a4059] text-white font-bold rounded-lg shadow-md transition-all hover:scale-105"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onNavigate('court-detail', court);
+                                }}
+                             >
+                                <Calendar className="w-4 h-4 mr-2" />
+                                Ver Disponibilidad
+                             </Button>
                         </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Users size={16} className="text-gray-400" />
-                          <span className="font-medium">{tournament.participants} Equipos</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Calendar size={16} className="text-gray-400" />
-                          <span className="font-medium">{tournament.startDate}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                   );
+                })}
               </div>
             )}
           </TabsContent>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Clock, Zap, Save, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Zap, Save, Loader2, AlertTriangle, Trash2, Camera, Image as ImageIcon, X } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Input } from '../../ui/input';
@@ -10,10 +10,11 @@ import { Checkbox } from '../../ui/checkbox';
 import { Badge } from '../../ui/badge';
 import { AppHeader } from '../../common/AppHeader';
 
+import { compressImage } from '../../../utils/imageUtils';
 // --- INICIO: Importaciones de Firebase ---
 import { auth, db } from '../../../Firebase/firebaseConfig';
 import { doc, updateDoc, serverTimestamp, DocumentData, deleteDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+// import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { toast } from 'sonner';
 // --- FIN: Importaciones de Firebase ---
 
@@ -138,8 +139,8 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
         description: courtData.description || '',
         amenities: courtData.amenities || [],
         isActive: courtData.isActive !== undefined ? !!courtData.isActive : true,
-        images: courtData.images || [],
-        minBookingHours: (courtData.minBookingHours ?? '').toString(),
+        images: courtData.images || (courtData.imageUrl ? [courtData.imageUrl] : []),
+          minBookingHours: (courtData.minBookingHours ?? '').toString(),
         advanceBookingWindowHours: (courtData.advanceBookingWindowHours ?? '').toString(),
         cancellationPolicy: courtData.cancellationPolicy || '',
         requirePrepayment: !!courtData.requirePrepayment,
@@ -185,7 +186,7 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
           description: cd.description || '',
           amenities: cd.amenities || [],
           isActive: cd.isActive !== undefined ? !!cd.isActive : true,
-          images: cd.images || [],
+          images: cd.images || (cd.imageUrl ? [cd.imageUrl] : []),
           minBookingHours: (cd.minBookingHours ?? '').toString(),
           advanceBookingWindowHours: (cd.advanceBookingWindowHours ?? '').toString(),
           cancellationPolicy: cd.cancellationPolicy || '',
@@ -248,12 +249,32 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
     if (!currentUser || currentUser.uid !== courtData.ownerId) return;
     try {
       setUploadingImage(true);
+      
+      // MODO BASE64 (FALLBACK POR ERROR DE PLAN FIREBASE)
+      const base64Url = await compressImage(file, 600, 0.5);
+      
+      // Si ya hay muchas imágenes, advertir o limitar, ya que Firestore tiene límite de 1MB por doc
+      // Estimamos tamaño: base64 length aprox bytes. 
+      // 600px jpg 0.5 ~ 50-100KB. 
+      // 5 imágenes ~ 500KB. Seguro hasta 5-8 imágenes.
+      if (formData.images.length >= 5) {
+         toast.error("Límite de imágenes alcanzado (Plan Gratuito)");
+         return;
+      }
+
+      setFormData(prev => ({ ...prev, images: [...prev.images, base64Url] }));
+
+      /*
       const storage = getStorage();
       const path = `courts/${courtData.id}/${Date.now()}_${file.name}`;
       const ref = storageRef(storage, path);
       await uploadBytes(ref, file);
       const url = await getDownloadURL(ref);
       setFormData(prev => ({ ...prev, images: [...prev.images, url] }));
+      */
+    } catch (e) {
+      console.error("Error al procesar imagen", e);
+      toast.error("Error al procesar la imagen");
     } finally {
       setUploadingImage(false);
     }
@@ -662,24 +683,42 @@ export function EditCourtScreen({ onBack, onNavigate, courtData }: EditCourtScre
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-[#172c44] flex items-center gap-2">Multimedia</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-[#172c44] flex items-center gap-2"><Camera size={20} />Multimedia</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {formData.images.map((url) => (
-                <div key={url} className="relative">
-                  <img src={url} alt="Cancha" className="w-full h-24 object-cover rounded-xl border border-slate-200" />
-                  <Button size="sm" variant="outline" className="absolute top-2 right-2 bg-white/80" onClick={() => handleRemoveImage(url)}>
-                    Quitar
-                  </Button>
+                <div key={url} className="relative group aspect-video">
+                  <img src={url} alt="Cancha" className="w-full h-full object-cover rounded-xl border border-slate-200" />
+                  <button 
+                    className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => handleRemoveImage(url)}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               ))}
+              
+              <label className="relative flex flex-col items-center justify-center aspect-video bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors">
+                {uploadingImage ? (
+                    <Loader2 className="animate-spin text-gray-400" size={24} />
+                ) : (
+                    <>
+                        <ImageIcon className="text-gray-400 mb-1" size={24} />
+                        <span className="text-xs text-gray-500 font-medium">Agregar foto</span>
+                    </>
+                )}
+                <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={(e) => e.target.files && handleAddImage(e.target.files[0])}
+                    disabled={uploadingImage}
+                />
+              </label>
             </div>
-            <div className="flex items-center gap-3">
-              <input type="file" accept="image/*" onChange={(e) => e.target.files && handleAddImage(e.target.files[0])} />
-              <Button disabled={uploadingImage} className="bg-[#00a884] hover:bg-[#00a884]/90 text-white">
-                {uploadingImage ? 'Subiendo...' : 'Agregar Imagen'}
-              </Button>
-            </div>
+            <p className="text-xs text-gray-500">
+                Sube fotos para mostrar tu cancha. La primera imagen será la principal.
+            </p>
           </CardContent>
         </Card>
 

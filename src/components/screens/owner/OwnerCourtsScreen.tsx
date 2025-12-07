@@ -47,6 +47,8 @@ interface Court extends DocumentData {
   id: string;
   name: string;
   sport: string;
+  imageUrl?: string;
+  images?: string[];
 }
 
 interface OwnerCourtsScreenProps {
@@ -239,10 +241,20 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
           {/* Lista de Canchas */}
           {courts.length > 0 ? (
             <div className="space-y-4">
-              {courts.map((court) => (
-                <Card key={court.id} className="bg-white/80 backdrop-blur-sm shadow-xl hover:shadow-2xl border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden">
-                   <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500`}></div>
-                  <CardContent className="p-5">
+              {courts.map((court) => {
+                const bgImage = court.imageUrl || (court.images && court.images.length > 0 ? court.images[0] : null);
+                return (
+                <Card key={court.id} className="bg-white/80 backdrop-blur-sm shadow-xl hover:shadow-2xl border-0 transform hover:-translate-y-1 transition-all duration-300 rounded-2xl overflow-hidden group">
+                   {bgImage ? (
+                     <div className="h-32 w-full relative">
+                       <img src={bgImage} alt={court.name} className="w-full h-full object-cover" />
+                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                       <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500`}></div>
+                     </div>
+                   ) : (
+                     <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500`}></div>
+                   )}
+                  <CardContent className={`p-5 ${bgImage ? 'pt-4' : ''}`}>
                     <div className="flex justify-between items-start">
                       <div>
                         <h3 className="font-['Outfit'] font-bold text-lg text-slate-800">{court.name}</h3>
@@ -294,7 +306,8 @@ export function OwnerCourtsScreen({ onNavigate }: OwnerCourtsScreenProps) {
                      </div>
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <Card className="bg-white/80 backdrop-blur-sm text-center p-8 rounded-2xl">

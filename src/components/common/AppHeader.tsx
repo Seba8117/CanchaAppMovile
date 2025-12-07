@@ -9,6 +9,7 @@ interface AppHeaderProps {
   onBack?: () => void;
   rightContent?: React.ReactNode;
   titleClassName?: string;
+  className?: string;
 }
 
 export function AppHeader({ 
@@ -17,10 +18,11 @@ export function AppHeader({
   showBackButton = false, 
   onBack, 
   rightContent,
-  titleClassName = "text-[#172c44] text-lg"
+  titleClassName = "text-[#172c44] text-lg",
+  className
 }: AppHeaderProps) {
   return (
-    <div className="bg-white shadow-sm border-b border-gray-100">
+    <div className={className || "bg-white shadow-sm border-b border-gray-100"}>
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3">
           {showBackButton && onBack && (

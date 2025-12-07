@@ -262,3 +262,23 @@ export const cancelMatch = async (matchId: string, userId: string) => {
     throw error;
   }
 };
+
+export const getMatchById = async (matchId: string) => {
+  try {
+    const snap = await getDoc(doc(db, 'matches', matchId));
+    if (snap.exists()) return { id: snap.id, ...snap.data() };
+    return null;
+  } catch (error) {
+    console.error("Error getting match:", error);
+    return null;
+  }
+};
+
+export const deleteMatch = async (matchId: string) => {
+  try {
+    await deleteDoc(doc(db, 'matches', matchId));
+  } catch (error) {
+    console.error("Error deleting match:", error);
+    throw error;
+  }
+};
