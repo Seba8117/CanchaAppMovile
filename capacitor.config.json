@@ -18,5 +18,9 @@
     "allowMixedContent": true,
     "captureInput": true,
     "webContentsDebuggingEnabled": true
+  },
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
   }
 }

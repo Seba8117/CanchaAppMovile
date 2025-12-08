@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, MapPin, Calendar, Clock, Users, DollarSign, Crown, Shield, Loader2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Clock, Users, DollarSign, Crown, Shield, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -12,12 +12,14 @@ import { createMatch, getAllCourts } from '../../../services/matchService';
 import { auth, db } from '../../../Firebase/firebaseConfig';
 import { startMatchCheckout } from '../../../services/paymentService';
 import { DocumentData, collection, query, where, getDocs, Timestamp, doc, setDoc, addDoc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../ui/dialog';
 
 interface CreateMatchScreenProps {
   onBack: () => void;
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
-export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
+export function CreateMatchScreen({ onBack, onNavigate }: CreateMatchScreenProps) {
   const [step, setStep] = useState(1);
   const [selectedSport, setSelectedSport] = useState('');
   const [selectedCourtId, setSelectedCourtId] = useState('');
@@ -28,6 +30,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<'immediate' | 'deferred'>('deferred');
+  const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
 
   // State for match details
   const [matchDate, setMatchDate] = useState('');
@@ -521,7 +524,16 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
     </div>
   );
 
+  const handlePublishClick = () => {
+    if (paymentMode === 'immediate') {
+      setShowPaymentConfirm(true);
+    } else {
+      handlePublish();
+    }
+  };
+
   const handlePublish = async () => {
+    setShowPaymentConfirm(false);
     const currentUser = auth.currentUser;
     const court = courts.find(c => c.id === selectedCourtId);
 
@@ -598,7 +610,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
       description: description,
       captainId: currentUser.uid,
       captainName: currentUser.displayName || "Capitán Anónimo",
-      status: 'open',
+      status: paymentMode === 'immediate' ? 'pending_payment' : 'open',
       players: [currentUser.uid],
       currentPlayers: 1,
       totalCost: (courts.find(c => c.id === selectedCourtId)?.pricePerHour || 0) * matchDuration,
@@ -663,12 +675,18 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           await startMatchCheckout({ matchId, title: `Partido en ${court.name}`, price: (court.pricePerHour || 0) * matchDuration, payerEmail: currentUser.email || null, sellerId: court.ownerId || null, applicationFee: 0 });
         } catch (paymentError) {
           console.error('Error al iniciar el pago:', paymentError);
-          toast.error('No se pudo iniciar el pago.', { description: 'El partido fue creado con pago pendiente. Puedes pagar más tarde.' });
-          onBack();
+          const errorMessage = paymentError instanceof Error ? paymentError.message : 'Error desconocido';
+          toast.error('No se pudo iniciar el pago.', { description: `Error: ${errorMessage}. El partido está pendiente.` });
+          // NO volver atrás para permitir reintentar o ver el error
+          // onBack();
         }
       } else {
         toast.success('¡Partido creado!', { description: 'Podrás pagar antes de iniciar el partido.' });
-        onBack();
+        if (onNavigate) {
+          onNavigate('match-detail', matchData);
+        } else {
+          onBack();
+        }
       }
 
     } catch (err: any) {
@@ -781,7 +799,7 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           Atrás
         </Button>
         <Button 
-          onClick={handlePublish}
+          onClick={handlePublishClick}
           disabled={loading}
           className="flex-1 bg-[#00a884] hover:bg-[#00a884]/90 text-white font-bold"
         >
@@ -795,6 +813,60 @@ export function CreateMatchScreen({ onBack }: CreateMatchScreenProps) {
           )}
         </Button>
       </div>
+
+      <Dialog open={showPaymentConfirm} onOpenChange={setShowPaymentConfirm}>
+        <DialogContent className="bg-white text-[#172c44] border-0 max-w-[90%] w-[400px] rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold text-[#00a884]">
+              <AlertCircle className="h-6 w-6" />
+              Confirmar Pago Inmediato
+            </DialogTitle>
+            <DialogDescription className="text-gray-600 pt-2">
+              Estás a punto de realizar un pago inmediato para reservar tu partido. Por favor, revisa los detalles antes de continuar.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="bg-gray-50 p-4 rounded-lg space-y-3 my-2 border border-gray-100">
+            <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+              <span className="text-sm font-medium text-gray-500">Cancha</span>
+              <span className="text-sm font-bold text-[#172c44] text-right">{court?.name}</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+              <span className="text-sm font-medium text-gray-500">Fecha y Hora</span>
+              <span className="text-sm font-bold text-[#172c44] text-right">{matchDate} • {matchTime}</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+              <span className="text-sm font-medium text-gray-500">Duración</span>
+              <span className="text-sm font-bold text-[#172c44] text-right">{matchDuration} hora(s)</span>
+            </div>
+            <div className="flex justify-between items-center pt-1">
+              <span className="text-base font-bold text-[#172c44]">Total a Pagar</span>
+              <span className="text-xl font-black text-[#00a884]">${totalCost?.toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded text-center">
+            <p>Serás redirigido a Mercado Pago para completar la transacción de forma segura.</p>
+            <p className="mt-1 font-medium">Tiempo estimado: 1-2 minutos</p>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowPaymentConfirm(false)}
+              className="w-full sm:w-auto border-gray-300 text-gray-700 hover:bg-gray-100"
+            >
+              Volver atrás
+            </Button>
+            <Button
+              onClick={handlePublish}
+              className="w-full sm:w-auto bg-[#00a884] hover:bg-[#009675] text-white font-bold"
+            >
+              Confirmar y Pagar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>);
   };
 

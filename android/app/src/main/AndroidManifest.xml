@@ -22,6 +22,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Deep Link para Mercado Pago y retornos -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="localhost" />
+                <data android:scheme="https" android:host="localhost" />
+                <!-- Agrega aquí tu dominio real si lo tienes, ej: canchaapp.com -->
+            </intent-filter>
+
         </activity>
 
         <provider

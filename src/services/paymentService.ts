@@ -53,15 +53,19 @@ export async function startBookingCheckout(opts: {
   payerEmail?: string | null;
 }) {
   const forced = Number((import.meta as any).env?.VITE_MP_FORCE_AMOUNT);
-  const amount = (!isNaN(forced) && forced > 0) ? forced : Math.max(0, Number(opts.price) || 0);
+  const amount = (!isNaN(forced) && forced > 0) ? forced : Math.max(1, Number(opts.price) || 1);
+  
+  const currentUrl = window.location.href;
+  const cleanUrl = currentUrl.split('?')[0];
+
   const pref = await createCheckoutPreference({
     items: [{ title: opts.title, quantity: 1, unit_price: amount }],
     external_reference: opts.bookingId,
-    payer_email: opts.payerEmail || null,
+    payer_email: undefined, 
     back_urls: {
-      success: window.location.origin,
-      failure: window.location.origin,
-      pending: window.location.origin,
+      success: cleanUrl,
+      failure: cleanUrl,
+      pending: cleanUrl,
     },
   });
   try {
@@ -72,12 +76,14 @@ export async function startBookingCheckout(opts: {
   } catch {}
   const url = pref.init_point || pref.sandbox_init_point;
   if (!url) throw new Error('Preferencia de pago sin URL');
-  try {
-    await Browser.open({ url, presentationStyle: 'fullscreen' as any });
-  } catch {
-    window.location.href = url;
-  }
+  
+  // Intentar abrir en el mismo contexto si es posible para evitar perder estado
+  window.location.href = url; 
 }
+
+import { Capacitor } from '@capacitor/core';
+
+// ... (resto del código)
 
 export async function startMatchCheckout(opts: {
   matchId: string;
@@ -85,19 +91,25 @@ export async function startMatchCheckout(opts: {
   price: number;
   payerEmail?: string | null;
   sellerId?: string | null;
+  applicationFee?: number;
 }) {
   const forced = Number((import.meta as any).env?.VITE_MP_FORCE_AMOUNT);
-  const amount = (!isNaN(forced) && forced > 0) ? forced : Math.max(0, Number(opts.price) || 0);
+  const amount = (!isNaN(forced) && forced > 0) ? forced : Math.max(1, Number(opts.price) || 1);
+  
+  const currentUrl = window.location.href;
+  const cleanUrl = currentUrl.split('?')[0];
+
   const pref = await createCheckoutPreference({
     items: [{ title: opts.title, quantity: 1, unit_price: amount }],
     external_reference: opts.matchId,
-    payer_email: opts.payerEmail || null,
+    payer_email: undefined,
     back_urls: {
-      success: window.location.origin,
-      failure: window.location.origin,
-      pending: window.location.origin,
+      success: cleanUrl,
+      failure: cleanUrl,
+      pending: cleanUrl,
     },
     seller_id: opts.sellerId || null,
+    application_fee: opts.applicationFee,
   });
   try {
     await updateDoc(doc(db, 'matches', opts.matchId), {
@@ -107,9 +119,10 @@ export async function startMatchCheckout(opts: {
   } catch {}
   const url = pref.init_point || pref.sandbox_init_point;
   if (!url) throw new Error('Preferencia de pago sin URL');
-  try {
-    await Browser.open({ url, presentationStyle: 'fullscreen' as any });
-  } catch {
+  
+  if (Capacitor.isNativePlatform()) {
+    await Browser.open({ url, presentationStyle: 'fullscreen' });
+  } else {
     window.location.href = url;
   }
 }

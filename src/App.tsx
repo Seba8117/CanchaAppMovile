@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 // --- INICIO: Importaciones para la prueba de Firebase ---
 import { db, auth } from "./Firebase/firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged, User } from "firebase/auth";
 // --- FIN: Importaciones para la prueba de Firebase ---
 
@@ -45,6 +45,8 @@ import { toast } from "sonner";
 import { checkPaymentStatus } from "./services/paymentService";
 
 
+
+import { App as CapacitorApp } from '@capacitor/app';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -125,26 +127,88 @@ export default function App() {
     setScreenData(null);
   };
 
-  useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const mp = sp.get("mp");
-    const ref = sp.get("ref");
-    if (mp === "return" && ref) {
-      checkPaymentStatus(ref)
-        .then((r) => {
-          if (r.status === "approved") {
-            toast.success("Pago aprobado");
-          } else {
-            toast.message("Pago pendiente");
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          const clean = window.location.origin + window.location.pathname;
-          window.history.replaceState(null, "", clean);
-        });
+  // Función de polling para verificar pago
+  const pollPaymentStatus = async (ref: string, attempts = 0): Promise<any> => {
+    try {
+      const r = await checkPaymentStatus(ref);
+      if (r.status === 'approved' || r.status === 'rejected') return r;
+      if (attempts < 5) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return pollPaymentStatus(ref, attempts + 1);
+      }
+      return r;
+    } catch (e) {
+      if (attempts < 5) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return pollPaymentStatus(ref, attempts + 1);
+      }
+      throw e;
     }
+  };
+
+  // Manejo de Deep Links (Android/iOS)
+  useEffect(() => {
+    const handleUrl = async (url: string) => {
+      const sp = new URL(url).searchParams;
+      const mp = sp.get("mp");
+      const ref = sp.get("ref");
+      const status = sp.get("status");
+
+      if (mp === "return" && ref) {
+        if (status === "failure") {
+          toast.error("El pago fue cancelado o rechazado");
+          return;
+        }
+
+        toast.loading("Verificando pago...", { id: "payment-check" });
+        try {
+          const r = await pollPaymentStatus(ref);
+          toast.dismiss("payment-check");
+          if (r.status === "approved") {
+            toast.success("Pago aprobado exitosamente");
+            // Lógica de redirección a detalle...
+             try {
+               const matchSnap = await getDoc(doc(db, "matches", ref));
+               if (matchSnap.exists()) {
+                 setScreenData({ id: matchSnap.id, ...matchSnap.data() });
+                 setCurrentScreen("match-detail");
+                 return;
+               }
+               const bookingSnap = await getDoc(doc(db, "bookings", ref));
+               if (bookingSnap.exists()) {
+                 setCurrentScreen("my-bookings");
+                 return;
+               }
+             } catch {}
+          } else {
+            toast.info("El pago está en proceso. Verifica en unos momentos.");
+          }
+        } catch {
+          toast.dismiss("payment-check");
+          toast.warning("No se pudo verificar el pago. Revisa 'Mis Reservas'.");
+        }
+      }
+    };
+
+    // Listener para Deep Links (Nativo)
+    const listener = CapacitorApp.addListener('appUrlOpen', (data) => {
+      handleUrl(data.url);
+    });
+
+    // Listener para URL inicial (Web)
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("mp") === "return") {
+       handleUrl(window.location.href);
+       const clean = window.location.origin + window.location.pathname;
+       window.history.replaceState(null, "", clean);
+    }
+
+    return () => {
+      listener.then(l => l.remove());
+    };
   }, []);
+
+  // ... (resto del código)
 
   if (!isLoggedIn) {
     return (
@@ -273,7 +337,7 @@ export default function App() {
             />
           );
         case "create":
-          return <CreateMatchScreen onBack={handleBack} />;
+          return <CreateMatchScreen onBack={handleBack} onNavigate={handleNavigate} />;
         case "available-matches":
           return (
             <AvailableMatchesScreen

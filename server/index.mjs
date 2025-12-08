@@ -3,14 +3,22 @@ import cors from 'cors';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import admin from 'firebase-admin';
 import { GoogleAuth } from 'google-auth-library';
+import 'dotenv/config';
 
 const accessToken = process.env.MP_ACCESS_TOKEN;
-if (!accessToken) {
+const isMock = !accessToken || accessToken === 'TU_ACCESS_TOKEN_AQUI' || accessToken.startsWith('TEST-00000000');
+
+if (!accessToken && !isMock) {
   console.error('MP_ACCESS_TOKEN no está definido en el entorno.');
   process.exit(1);
 }
 
-const client = new MercadoPagoConfig({ accessToken });
+if (isMock) {
+  console.warn('⚠️  SERVIDOR CORRIENDO EN MODO MOCK (Sin credenciales reales de Mercado Pago) ⚠️');
+  console.warn('Los pagos serán simulados.');
+}
+
+const client = isMock ? null : new MercadoPagoConfig({ accessToken });
 let fdb = null;
 let projectId = null;
 let svcAuthCreds = null;
@@ -30,14 +38,33 @@ app.use(express.json());
 
 app.post('/create_preference', async (req, res) => {
   try {
-    const { items, external_reference, payer_email, payment_methods, expiration_date_from, expiration_date_to, binary_mode, statement_descriptor, application_fee, seller_id, seller_token } = req.body || {};
+    console.log('Recibida solicitud de preferencia:', JSON.stringify(req.body, null, 2));
+    const { items, external_reference, payer_email, payment_methods, expiration_date_from, expiration_date_to, binary_mode, statement_descriptor, application_fee, seller_id, seller_token, back_urls: clientBackUrls } = req.body || {};
     const backBase = process.env.MP_BACK_URL_BASE || 'http://localhost:3000/';
+    if (process.env.NODE_ENV === 'production' && !backBase.startsWith('https')) {
+      console.warn('ADVERTENCIA DE SEGURIDAD: MP_BACK_URL_BASE debería ser HTTPS en producción.');
+    }
     const baseClean = String(backBase).replace(/\/$/, '');
     const successUrl = `${baseClean}/?mp=return&status=approved&ref=${encodeURIComponent(external_reference || '')}`;
-    const back_urls = { success: successUrl, failure: baseClean, pending: baseClean };
+    const failureUrl = `${baseClean}/?mp=return&status=failure&ref=${encodeURIComponent(external_reference || '')}`;
+    const pendingUrl = `${baseClean}/?mp=return&status=pending&ref=${encodeURIComponent(external_reference || '')}`;
+    
+    // Usar URLs del cliente si se proporcionan, sino las generadas
+    const back_urls = clientBackUrls || { success: successUrl, failure: failureUrl, pending: pendingUrl };
+
     if (!Array.isArray(items) || items.length === 0 || !external_reference) {
       return res.status(400).json({ error: 'Parametros inválidos' });
     }
+
+    if (isMock) {
+      console.log('MOCK: Creando preferencia simulada para', external_reference);
+      return res.json({
+        id: 'mock_pref_' + Date.now(),
+        init_point: `${baseClean}/mock_checkout?ref=${encodeURIComponent(external_reference)}&success=${encodeURIComponent(successUrl)}&failure=${encodeURIComponent(failureUrl)}&pending=${encodeURIComponent(pendingUrl)}`,
+        sandbox_init_point: `${baseClean}/mock_checkout?ref=${encodeURIComponent(external_reference)}&success=${encodeURIComponent(successUrl)}&failure=${encodeURIComponent(failureUrl)}&pending=${encodeURIComponent(pendingUrl)}`
+      });
+    }
+
     let clientToUse = client;
     try {
       let tokenCandidate = seller_token || null;
@@ -57,7 +84,7 @@ app.post('/create_preference', async (req, res) => {
         external_reference,
         payer: payer_email ? { email: payer_email } : undefined,
         back_urls,
-        // auto_return removed to avoid strict requirement on back_urls.success during sandbox/local
+        // auto_return: 'approved', // Desactivado temporalmente por error 'invalid_auto_return' con localhost
         notification_url: process.env.MP_WEBHOOK_URL || undefined,
         payment_methods,
         expiration_date_from,
@@ -100,6 +127,12 @@ app.get('/payment_status/:external_reference', async (req, res) => {
   try {
     const { external_reference } = req.params;
   if (!external_reference) return res.status(400).json({ error: 'external_reference requerido' });
+
+  if (isMock) {
+    const status = mockPaymentStore.get(external_reference) || 'pending';
+    return res.json({ status, payment_id: 'mock_pay_' + Date.now(), count: 1 });
+  }
+
   const result = await new Payment(client).search({ options: { external_reference } });
   const payments = result?.results || [];
   const latest = payments[0] || null;
@@ -116,6 +149,9 @@ app.get('/payment_status/:external_reference', async (req, res) => {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       const upd = { paymentStatus: status, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+      if (status === 'approved') {
+        upd.status = 'open'; // Publicar partido si el pago fue aprobado
+      }
       try { await fdb.doc(`matches/${external_reference}`).update(upd); } catch {}
       try { await fdb.doc(`bookings/${external_reference}`).update({ status: status === 'approved' ? 'confirmed' : 'pending_payment', updatedAt: admin.firestore.FieldValue.serverTimestamp() }); } catch {}
     }
@@ -143,6 +179,9 @@ app.post('/webhook', async (req, res) => {
         if (fdb) {
           try { await fdb.collection('payments').add({ external_reference: ext, payment_id: payment?.id, status: payment?.status, amount: payment?.transaction_amount, preference_id: payment?.metadata?.preference_id || null, createdAt: admin.firestore.FieldValue.serverTimestamp() }); } catch {}
           const upd = { paymentStatus: payment?.status, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+          if (payment?.status === 'approved') {
+            upd.status = 'open'; // Publicar partido si el pago fue aprobado
+          }
           try { if (ext) await fdb.doc(`matches/${ext}`).update(upd); } catch {}
           try { if (ext) await fdb.doc(`bookings/${ext}`).update({ status: payment?.status === 'approved' ? 'confirmed' : 'pending_payment', updatedAt: admin.firestore.FieldValue.serverTimestamp() }); } catch {}
         }
@@ -236,6 +275,77 @@ app.post('/firestore/indexes/create', async (req, res) => {
     console.error('No se pudo crear índice:', e?.message || e);
     res.status(500).json({ error: 'index_create_failed' });
   }
+});
+
+const mockPaymentStore = new Map();
+
+app.post('/mock_update_status', async (req, res) => {
+  if (!isMock) return res.status(403).send('Not in mock mode');
+  const { ref, status } = req.body;
+  mockPaymentStore.set(ref, status);
+  
+  // También actualizar firebase si es posible, para que la app lo vea reflejado en otros lados
+   if (fdb && ref) {
+     try {
+       const upd = { paymentStatus: status, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+       if (status === 'approved') {
+         upd.status = 'open';
+       }
+       await fdb.doc(`matches/${ref}`).update(upd).catch(() => {});
+       await fdb.doc(`bookings/${ref}`).update({ status: status === 'approved' ? 'confirmed' : 'pending_payment', updatedAt: admin.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+     } catch (e) { console.error('Error actualizando firebase en mock:', e); }
+   }
+  
+  res.json({ ok: true });
+});
+
+app.get('/mock_checkout', (req, res) => {
+  const { ref, success, failure, pending } = req.query;
+  res.send(`
+    <html>
+      <head>
+        <title>Simulación de Pago - CanchApp</title>
+        <style>
+          body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; }
+          .card { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
+          h1 { color: #172c44; margin-bottom: 1.5rem; }
+          p { color: #666; margin-bottom: 2rem; }
+          button { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; transition: opacity 0.2s; }
+          button:hover { opacity: 0.9; }
+          .success { background: #00a884; color: white; }
+          .failure { background: #ff4444; color: white; }
+          .pending { background: #f4b400; color: #172c44; }
+        </style>
+        <script>
+          async function selectOutcome(status, url) {
+            try {
+              await fetch('/mock_update_status', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ ref: '${ref}', status: status })
+              });
+            } catch(e) { console.error(e); }
+            window.location.href = url;
+          }
+        </script>
+      </head>
+      <body>
+        <div class="card">
+          <h1>Pasarela de Pago Simulada</h1>
+          <div style="background: #fff3cd; color: #856404; padding: 10px; margin-bottom: 20px; border-radius: 5px; font-size: 14px;">
+             ⚠️ <strong>Modo Simulación Activo</strong><br>
+             No se detectó un <code>MP_ACCESS_TOKEN</code> válido en el archivo <code>.env</code>.<br>
+             Para usar Mercado Pago real, configura tu token y reinicia el servidor.
+          </div>
+          <p>Referencia: <strong>${ref}</strong></p>
+          <p>Selecciona el resultado de la transacción:</p>
+          <button class="success" onclick="selectOutcome('approved', '${success}')">Aprobar Pago ✅</button>
+          <button class="failure" onclick="selectOutcome('rejected', '${failure}')">Rechazar Pago ❌</button>
+          <button class="pending" onclick="selectOutcome('pending', '${pending}')">Pago Pendiente ⏳</button>
+        </div>
+      </body>
+    </html>
+  `);
 });
 
 const port = process.env.PORT || 4000;

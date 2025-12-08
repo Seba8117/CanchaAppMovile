@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "199638668823",
+    "project_id": "canchaapp-8df2c",
+    "storage_bucket": "canchaapp-8df2c.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:199638668823:android:fa089c437663227da56e52",
+        "android_client_info": {
+          "package_name": "com.canchapp.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "199638668823-3qcl2kdl8ul407d5ln9o476768616566.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcOpI-oUxG2TLC3af7YgdzsCSUqdFcaM4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "199638668823-3qcl2kdl8ul407d5ln9o476768616566.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
